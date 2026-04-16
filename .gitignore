@@ -1,0 +1,19 @@
+# Local data — never commit raw signal databases
+data/
+*.json
+!package.json
+!tsconfig.json
+
+# Build output
+dist/
+
+# Node
+node_modules/
+.pnpm-store/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo

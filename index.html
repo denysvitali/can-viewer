@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CAN Signal Explorer</title>
+<link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+
+<div class="view" id="dropView">
+  <div class="topbar"><div class="topbar-row"><h1>CAN Signal Explorer</h1></div></div>
+  <div class="drop-wrap">
+    <div class="drop-box" id="dropBox">
+      <h2>Open Signal Database</h2>
+      <p>Drop a <code>*_can_generated.json</code> file here,<br>or tap to browse.</p>
+      <button class="drop-btn" id="dropBtn">Select File</button>
+      <input type="file" id="fileInput" accept=".json">
+    </div>
+  </div>
+</div>
+
+<div class="view hidden" id="listView">
+  <div class="topbar">
+    <div class="topbar-row">
+      <h1>CAN Signals</h1>
+      <span class="file-label" id="fileLabel"></span>
+    </div>
+    <div class="search-wrap">
+      <span class="icon">&#x1F50D;</span>
+      <input type="text" id="search" placeholder="Search signals, messages, IDs..." autocomplete="off">
+    </div>
+    <div class="filter-row" id="filters">
+      <button class="fchip on" data-bus="all">All</button>
+    </div>
+  </div>
+  <div class="stats-bar" id="statsBar"></div>
+  <div class="scroll-area" id="scrollArea">
+    <div id="signalList"></div>
+    <div class="load-more" id="loadMore"></div>
+  </div>
+</div>
+
+<div class="view hidden" id="detailView">
+  <div class="detail-header">
+    <div class="back-row">
+      <button class="back-btn" id="detailBack">&lsaquo;</button>
+      <div class="detail-title" id="detailTitle"></div>
+    </div>
+  </div>
+  <div class="detail-scroll" id="detailScroll"></div>
+</div>
+
+<div class="view hidden" id="msgView">
+  <div class="detail-header">
+    <div class="back-row">
+      <button class="back-btn" id="msgBack">&lsaquo;</button>
+      <div class="detail-title" id="msgTitle"></div>
+      <button class="copy-btn" id="msgCopy" title="Copy signal data">&#x1F4CB;</button>
+    </div>
+  </div>
+  <div class="detail-scroll" id="msgScroll"></div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

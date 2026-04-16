@@ -26,7 +26,7 @@ export function signalBitIndices(
 
 // Bit diagram for a single signal: highlights the bits it occupies.
 export function renderBits(startBit: number, width: number): string {
-  let h = '<div class="bit-diagram">';
+  let h = '<div class="bit-diagram-wrap"><div class="bit-diagram">';
   for (let byte = 0; byte < 8; byte++) {
     h += `<div class="bit-byte-label">B${byte}</div>`;
     for (let bit = 7; bit >= 0; bit--) {
@@ -36,7 +36,7 @@ export function renderBits(startBit: number, width: number): string {
       h += `<div class="bit-cell${inRange ? " hl" : ""}">${label}</div>`;
     }
   }
-  h += "</div>";
+  h += "</div></div>";
   return h;
 }
 
@@ -52,18 +52,19 @@ export function renderFrameOverview(msgSigs: Signal[]): string {
     for (const b of idxs) if (b >= 0 && b < 64) bits[b] = s.key;
   }
 
-  let h = '<div class="bit-diagram">';
+  let h = '<div class="bit-diagram-wrap"><div class="bit-diagram">';
   for (let byte = 0; byte < 8; byte++) {
     h += `<div class="bit-byte-label">B${byte}</div>`;
     for (let bit = 7; bit >= 0; bit--) {
       const abs = byte * 8 + bit;
       const owner = bits[abs];
-      const cls = owner ? "hl" : "";
-      const bg = owner ? `background:${signalColor(owner)}15;border-color:${signalColor(owner)}60;color:${signalColor(owner)}` : "";
-      h += `<div class="bit-cell ${cls}" style="${bg}">${abs}</div>`;
+      const style = owner
+        ? `background:${signalColor(owner)}26;color:${signalColor(owner)};box-shadow:inset 0 0 0 1px ${signalColor(owner)}80`
+        : "";
+      h += `<div class="bit-cell" style="${style}">${abs}</div>`;
     }
   }
-  h += "</div>";
+  h += "</div></div>";
 
   const seen = new Set<string>();
   h += '<div class="legend">';

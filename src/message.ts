@@ -1,44 +1,49 @@
 import type { Signal } from "./types.ts";
 import { state } from "./state.ts";
 import {
-  $list, $msg, $msgBack, $msgCopy, $msgScroll, $msgTitle,
+  $msgBack, $msgCopy, $msgScroll, $msgTitle,
 } from "./dom.ts";
 import { esc, formatHexId, prop, signalColor } from "./helpers.ts";
 import { renderFrameOverview } from "./bits.ts";
-import { showView } from "./views.ts";
+import { showPane } from "./views.ts";
 import { openSignal } from "./signal.ts";
 
+let currentMid: number | null = null;
+
 export function initMessageView(): void {
-  $msgBack.addEventListener("click", () => showView($list));
+  $msgBack.addEventListener("click", () => {
+    currentMid = null;
+    showPane("empty");
+  });
   $msgCopy.addEventListener("click", onCopy);
 }
 
 export function openMessage(mid: number): void {
   const msg = state.messages[mid];
   if (!msg) return;
+  currentMid = mid;
   const msgSigs = msg.signals
     .map((k) => state.sigByKey[k])
     .filter((s): s is Signal => Boolean(s));
 
-  $msgTitle.textContent = `${msg.name}  ${formatHexId(msg.id)}`;
+  $msgTitle.innerHTML = `${esc(msg.name)}<span class="pane-title-hex">${formatHexId(msg.id)}</span>`;
 
   let h = "";
 
   h += `<div class="section"><div class="props">`;
   h += prop("CAN ID", `${formatHexId(msg.id)} (${msg.id})`);
-  h += prop("Bus", `${msg.bus} (bus ${msg.busNum ?? "?"})`);
+  h += prop("Bus", `${msg.bus} · ${msg.busNum ?? "?"}`);
   h += prop("Signals", msgSigs.length);
   h += prop("Cycle Time", msg.cycleTime ? msg.cycleTime + " ms" : "—");
   h += `</div></div>`;
 
   if (msgSigs.some((s) => s.Signal?.Width)) {
-    h += `<div class="section"><div class="section-label">Frame Overview</div>
+    h += `<div class="section"><div class="section-label">Frame Layout</div>
       <div class="frame-overview"><div class="frame-canvas">${renderFrameOverview(msgSigs)}</div></div>
     </div>`;
   }
 
-  // Split into non-muxed signals (incl. selectors) and groups keyed by
-  // `${Muxer}=${MuxID}` so each mux variant renders as its own section.
+  // Group signals by mux variant.
   const muxedKey = (s: Signal) =>
     typeof s.MuxID === "number" && s.MuxID >= 0 && s.Muxer ? `${s.Muxer}=${s.MuxID}` : "";
   const selectorNames = new Set(msgSigs.map(muxedKey).filter(Boolean).map((k) => k.split("=")[0]));
@@ -58,15 +63,15 @@ export function openMessage(mid: number): void {
   const renderSig = (s: Signal): string => {
     const sig = s.Signal ?? {};
     const color = signalColor(s.key);
-    const scaleStr = sig.Scale && sig.Scale !== 1 ? ` &middot; \u00D7${sig.Scale}` : "";
-    const offsetStr = sig.Offset ? ` &middot; ${sig.Offset > 0 ? "+" : ""}${sig.Offset}` : "";
-    const signedStr = sig.Signedness === "SIGNED" ? " &middot; signed" : "";
-    const unitsStr = s.Units ? ` &middot; ${esc(s.Units)}` : "";
+    const scaleStr = sig.Scale && sig.Scale !== 1 ? ` · ×${sig.Scale}` : "";
+    const offsetStr = sig.Offset ? ` · ${sig.Offset > 0 ? "+" : ""}${sig.Offset}` : "";
+    const signedStr = sig.Signedness === "SIGNED" ? " · signed" : "";
+    const unitsStr = s.Units ? ` · ${esc(s.Units)}` : "";
     const bitStr = sig.StartPosition !== undefined
       ? `bit ${sig.StartPosition}:${sig.Width ?? "?"}`
       : "";
     const isSelector = s.Name && selectorNames.has(s.Name);
-    const badge = isSelector ? ` <span class="mux-badge">MUX</span>` : "";
+    const badge = isSelector ? `<span class="mux-badge">MUX</span>` : "";
     return `<div class="msg-signal-item" data-sigkey="${esc(s.key)}">
       <div class="msg-sig-color" style="background:${color}"></div>
       <div class="msg-sig-info">
@@ -76,7 +81,7 @@ export function openMessage(mid: number): void {
     </div>`;
   };
 
-  h += `<div class="section"><div class="section-label">Signals</div></div>`;
+  h += `<div class="msg-signals-heading">Signals</div>`;
   for (const s of plain) h += renderSig(s);
 
   const sortedMuxKeys = [...muxGroups.keys()].sort((a, b) => {
@@ -84,14 +89,14 @@ export function openMessage(mid: number): void {
     return ma!.localeCompare(mb!) || Number(va) - Number(vb);
   });
   for (const mk of sortedMuxKeys) {
-    const [muxer, mid] = mk.split("=");
-    h += `<div class="section"><div class="section-label mux-group-label">When <code>${esc(muxer!)}</code> = ${esc(mid!)}</div></div>`;
+    const [muxer, mid2] = mk.split("=");
+    h += `<div class="mux-group-label">When <code>${esc(muxer!)}</code> = ${esc(mid2!)}</div>`;
     for (const s of muxGroups.get(mk)!) h += renderSig(s);
   }
 
   $msgScroll.innerHTML = h;
   $msgScroll.scrollTop = 0;
-  showView($msg);
+  showPane("msg");
 
   $msgScroll.querySelectorAll<HTMLElement>(".msg-signal-item").forEach((el) => {
     el.addEventListener("click", () => {
@@ -104,11 +109,8 @@ export function openMessage(mid: number): void {
 }
 
 function onCopy(): void {
-  const title = $msgTitle.textContent?.trim() ?? "";
-  const hexMatch = title.match(/0x([0-9A-F]+)/);
-  if (!hexMatch) return;
-  const mid = parseInt(hexMatch[1]!, 16);
-  const msg = state.messages[mid];
+  if (currentMid == null) return;
+  const msg = state.messages[currentMid];
   if (!msg) return;
 
   const msgSigs = msg.signals
@@ -139,13 +141,17 @@ function onCopy(): void {
     ].join("\t");
   });
 
+  const title = `${msg.name}  ${formatHexId(msg.id)}`;
   const text = `${title}\n\n${header}\n${rows.join("\n")}`;
+
   const markCopied = () => {
     $msgCopy.classList.add("copied");
-    $msgCopy.textContent = "\u2713";
+    const span = $msgCopy.querySelector("span");
+    const prev = span?.textContent ?? "Copy";
+    if (span) span.textContent = "Copied";
     setTimeout(() => {
       $msgCopy.classList.remove("copied");
-      $msgCopy.textContent = "\u{1F4CB}";
+      if (span) span.textContent = prev;
     }, 1500);
   };
 

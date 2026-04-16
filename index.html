@@ -2,81 +2,183 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>CAN Signal Explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>CAN · Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/main.css">
 </head>
 <body>
 
-<div class="view" id="dropView">
-  <div class="topbar"><div class="topbar-row"><h1>CAN Signal Explorer</h1></div></div>
-  <div class="drop-wrap">
-    <div class="drop-box" id="dropBox">
-      <h2>Open Signal Database</h2>
-      <p>Drop a <code>*_can_generated.json</code> file here,<br>or tap to browse.</p>
-      <button class="drop-btn" id="dropBtn">Select File</button>
-      <input type="file" id="fileInput" accept=".json">
+<div id="app">
+  <header id="appHeader">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <rect x="1.5" y="1.5" width="19" height="19" rx="3" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M5 8h12M5 14h12" stroke="currentColor" stroke-width="1.2" stroke-linecap="square"/>
+          <circle cx="8" cy="8" r="1.1" fill="currentColor"/>
+          <circle cx="14" cy="14" r="1.1" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand-name">CAN&nbsp;·&nbsp;Explorer</span>
     </div>
-  </div>
-</div>
 
-<div class="view hidden" id="listView">
-  <div class="topbar">
-    <div class="topbar-row">
-      <h1>CAN Signals</h1>
-      <span class="file-label" id="fileLabel"></span>
-      <button class="decoder-btn" id="openPaste" title="Decode pasted frames">Decoder</button>
-    </div>
-    <div class="search-wrap">
-      <span class="icon">&#x1F50D;</span>
-      <input type="text" id="search" placeholder="Search signals, messages, IDs..." autocomplete="off">
-    </div>
-    <div class="filter-row" id="filters">
-      <button class="fchip on" data-bus="all">All</button>
-    </div>
-  </div>
-  <div class="stats-bar" id="statsBar"></div>
-  <div class="scroll-area" id="scrollArea">
-    <div id="signalList"></div>
-    <div class="load-more" id="loadMore"></div>
-  </div>
-</div>
+    <nav id="tabs" class="tabs" role="tablist">
+      <button class="tab-btn on" data-tab="signals" role="tab" aria-selected="true">Signals</button>
+      <button class="tab-btn" data-tab="decoder" role="tab" aria-selected="false">Decoder</button>
+    </nav>
 
-<div class="view hidden" id="detailView">
-  <div class="detail-header">
-    <div class="back-row">
-      <button class="back-btn" id="detailBack">&lsaquo;</button>
-      <div class="detail-title" id="detailTitle"></div>
+    <div class="file-box">
+      <span class="file-dot" id="fileDot" aria-hidden="true"></span>
+      <span class="file-label" id="fileLabel">No database loaded</span>
+      <button class="ghost-btn" id="loadFileBtn" title="Load another database">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M2.5 3.5h3l1 1.2H11.5v5.8a.7.7 0 0 1-.7.7H3.2a.7.7 0 0 1-.7-.7V3.5Z" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+        <span>Load</span>
+      </button>
     </div>
-  </div>
-  <div class="detail-scroll" id="detailScroll"></div>
-</div>
+  </header>
 
-<div class="view hidden" id="msgView">
-  <div class="detail-header">
-    <div class="back-row">
-      <button class="back-btn" id="msgBack">&lsaquo;</button>
-      <div class="detail-title" id="msgTitle"></div>
-      <button class="copy-btn" id="msgCopy" title="Copy signal data">&#x1F4CB;</button>
-    </div>
-  </div>
-  <div class="detail-scroll" id="msgScroll"></div>
-</div>
+  <main id="appMain">
 
-<div class="view hidden" id="pasteView">
-  <div class="detail-header">
-    <div class="back-row">
-      <button class="back-btn" id="pasteBack">&lsaquo;</button>
-      <div class="detail-title">Frame Decoder</div>
-    </div>
-  </div>
-  <div class="paste-wrap">
-    <textarea id="pasteInput" placeholder="7FFs:06A03400032010C0&#10;3FDs:0000003C20010280&#10;..." spellcheck="false"></textarea>
-    <div class="paste-actions">
-      <button class="paste-decode" id="pasteDecode">Decode</button>
-    </div>
-    <div class="paste-output" id="pasteOutput"></div>
-  </div>
+    <!-- ============ TAB: SIGNALS ============ -->
+    <section id="signalsTab" class="tab-panel" role="tabpanel">
+
+      <!-- Drop zone (initial state when no data is loaded) -->
+      <div id="dropView" class="drop-panel">
+        <div class="drop-inner">
+          <div class="drop-box" id="dropBox">
+            <div class="drop-icon" aria-hidden="true">
+              <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                <rect x="6" y="6" width="44" height="44" rx="6" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 3"/>
+                <path d="M28 18v18M20 28l8 10 8-10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h2>Load a CAN signal database</h2>
+            <p>Drop a <code>*_can_generated.json</code> file here, or tap to browse.</p>
+            <button class="primary-btn" id="dropBtn">Select file</button>
+            <input type="file" id="fileInput" accept=".json">
+          </div>
+          <div class="drop-meta">
+            <div class="meta-kv"><span class="mk">Format</span><span class="mv">JSON (flat signal map)</span></div>
+            <div class="meta-kv"><span class="mk">ID basis</span><span class="mv"><code>Message</code> field · 11-bit</span></div>
+            <div class="meta-kv"><span class="mk">Privacy</span><span class="mv">Parsed locally, nothing uploaded</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2-pane layout, revealed after loading a file -->
+      <div id="signalsPane" class="split hidden">
+
+        <aside id="signalsSidebar" class="split-aside">
+          <div class="aside-head">
+            <div class="search-wrap">
+              <svg class="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <circle cx="6" cy="6" r="4.3" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M9.2 9.2 12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+              <input type="text" id="search" placeholder="Search signal, message, ID" autocomplete="off" spellcheck="false">
+              <kbd class="search-kbd">/</kbd>
+            </div>
+            <div class="filter-row" id="filters">
+              <button class="fchip on" data-bus="all">All</button>
+            </div>
+          </div>
+          <div class="stats-bar" id="statsBar"></div>
+          <div class="scroll-area" id="scrollArea">
+            <div id="signalList"></div>
+            <div class="load-more" id="loadMore"></div>
+          </div>
+        </aside>
+
+        <section id="signalsContent" class="split-main">
+
+          <!-- Empty state (desktop only) -->
+          <div id="signalsEmpty" class="empty-state">
+            <div class="empty-card">
+              <div class="empty-glyph" aria-hidden="true">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                  <rect x="3" y="6" width="34" height="28" rx="2" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M3 14h34M9 22h6M9 28h10" stroke="currentColor" stroke-width="1.3"/>
+                </svg>
+              </div>
+              <div class="empty-title">Pick a signal to inspect</div>
+              <div class="empty-sub">Browse the list on the left or search by signal name, message, or hex ID.</div>
+            </div>
+          </div>
+
+          <!-- Signal detail pane -->
+          <div id="detailView" class="pane hidden">
+            <div class="pane-header">
+              <button class="back-btn" id="detailBack" aria-label="Back">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M9 3 4.5 7 9 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="pane-title" id="detailTitle"></div>
+            </div>
+            <div class="pane-scroll" id="detailScroll"></div>
+          </div>
+
+          <!-- Message detail pane -->
+          <div id="msgView" class="pane hidden">
+            <div class="pane-header">
+              <button class="back-btn" id="msgBack" aria-label="Back">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M9 3 4.5 7 9 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="pane-title" id="msgTitle"></div>
+              <button class="ghost-btn" id="msgCopy" title="Copy signal table">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                  <rect x="3.5" y="3.5" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.2"/>
+                  <path d="M2 9V2.5A.5.5 0 0 1 2.5 2H9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="pane-scroll" id="msgScroll"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ============ TAB: DECODER ============ -->
+    <section id="decoderTab" class="tab-panel hidden" role="tabpanel">
+      <div class="split">
+
+        <aside id="decoderInputPane" class="split-aside split-aside-wide">
+          <div class="aside-head aside-head-padded">
+            <div class="pane-eyebrow">
+              <span class="eyebrow-label">Frame trace</span>
+              <div class="eyebrow-actions">
+                <button class="ghost-btn" id="pasteClear" title="Clear">Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="paste-input-wrap">
+            <textarea id="pasteInput" spellcheck="false" wrap="off" placeholder="7FFs:06A03400032010C0
+3FDs:0000003C20010280
+399s:000ADFE0B0C82704
+..."></textarea>
+          </div>
+          <div class="paste-action-bar">
+            <button class="primary-btn" id="pasteDecode">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M3 2.5v8l7-4-7-4Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <span>Decode</span>
+              <kbd class="primary-kbd">⌘↵</kbd>
+            </button>
+            <div class="paste-input-meta" id="pasteMeta"></div>
+          </div>
+        </aside>
+
+        <section class="split-main decoder-main">
+          <div id="pasteOutput" class="paste-output"></div>
+        </section>
+      </div>
+    </section>
+
+  </main>
 </div>
 
 <script type="module" src="/src/main.ts"></script>

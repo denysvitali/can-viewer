@@ -7,6 +7,8 @@ import { esc, formatHexId } from "./helpers.ts";
 import { openSignal } from "./signal.ts";
 import { openMessage } from "./message.ts";
 
+let activeKey: string | null = null;
+
 export function initList(): void {
   $scroll.addEventListener("scroll", onScroll, { passive: true });
   $sigList.addEventListener("click", onListClick);
@@ -14,7 +16,7 @@ export function initList(): void {
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   $search.addEventListener("input", () => {
     if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(applyFilter, 200);
+    searchTimer = setTimeout(applyFilter, 150);
   });
 
   $filters.addEventListener("click", (e) => {
@@ -47,11 +49,19 @@ export function applyFilter(): void {
   updateStats();
 }
 
+export function markActiveSignal(key: string | null): void {
+  activeKey = key;
+  for (const el of $sigList.querySelectorAll<HTMLElement>(".signal-card")) {
+    el.classList.toggle("active", el.dataset.key === key);
+  }
+}
+
 function updateStats(): void {
   const msgCount = Object.values(state.messages)
     .filter((m) => state.currentBus === "all" || m.bus === state.currentBus)
     .length;
-  $stats.textContent = `${state.filtered.length.toLocaleString()} signals across ${msgCount} messages`;
+  const sigN = state.filtered.length.toLocaleString();
+  $stats.textContent = `${sigN} signals · ${msgCount} messages`;
 }
 
 function renderBatch(): void {
@@ -63,7 +73,7 @@ function renderBatch(): void {
   }
   $sigList.appendChild(frag);
   state.rendered = end;
-  $loadMore.textContent = state.rendered >= state.filtered.length ? "" : "Scroll for more...";
+  $loadMore.textContent = state.rendered >= state.filtered.length ? "" : "scroll for more";
 }
 
 function onScroll(): void {
@@ -88,11 +98,13 @@ function makeCard(s: Signal, idx: number): HTMLElement {
   const d = document.createElement("div");
   d.className = "signal-card";
   d.dataset.idx = String(idx);
+  d.dataset.key = s.key;
+  if (s.key === activeKey) d.classList.add("active");
   const sig = s.Signal ?? {};
   d.innerHTML = `
     <div class="sig-name">${esc(s.Name || s.key)}</div>
     <div class="sig-sub">
-      <span class="sig-tag">${formatHexId(s.ID)}</span>
+      <span class="sig-tag hex">${formatHexId(s.ID)}</span>
       <span class="sig-tag msg-link" data-mid="${s.ID}">${esc(s.MessageName ?? "")}</span>
       <span class="sig-tag bus">${esc(s.BusName ?? "")}</span>
       ${sig.Width ? `<span class="sig-tag bits">${sig.StartPosition}:${sig.Width}</span>` : ""}

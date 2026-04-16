@@ -1,7 +1,9 @@
 import type { SignalDatabase, Signal, Message } from "./types.ts";
 import { state } from "./state.ts";
-import { $dropBox, $dropBtn, $fileInput, $fileLabel, $filters, $list } from "./dom.ts";
-import { showView } from "./views.ts";
+import {
+  $dropBox, $dropBtn, $fileInput, $fileLabel, $fileDot, $filters,
+} from "./dom.ts";
+import { revealSignalsPane, showPane, switchTab } from "./views.ts";
 import { applyFilter } from "./list.ts";
 
 export function initDropzone(): void {
@@ -87,8 +89,14 @@ function ingest(data: SignalDatabase): void {
 
   rebuildBusFilters();
   applyFilter();
+
+  // Header status pill.
   $fileLabel.textContent = state.fileName;
-  showView($list);
+  $fileDot.classList.add("loaded");
+
+  switchTab("signals");
+  revealSignalsPane();
+  showPane("empty");
 }
 
 // Rebuild bus filter chips from the loaded data so the UI reflects whatever

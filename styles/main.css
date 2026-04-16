@@ -1178,66 +1178,69 @@ kbd {
 
 /* --- Payload bit grid (decoder visualization) ----------------------- */
 .pp-grid-wrap {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  overflow-x: auto;
 }
+.pp-grid-head,
 .pp-grid {
   display: grid;
-  grid-template-columns: 28px repeat(8, minmax(18px, 1fr)) 36px;
-  gap: 3px;
+  grid-template-columns: 22px repeat(8, 18px) 30px;
+  gap: 2px;
   font-family: var(--mono);
   align-items: center;
+  justify-content: start;
+  width: max-content;
 }
 .pp-grid-head {
-  display: grid;
-  grid-template-columns: 28px repeat(8, minmax(18px, 1fr)) 36px;
-  gap: 3px;
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 9px;
   color: var(--text-4);
-  letter-spacing: .08em;
+  letter-spacing: .06em;
   text-transform: uppercase;
 }
 .pp-grid-head > div { text-align: center; }
-.pp-grid-head > div:first-child,
+.pp-grid-head > div:first-child { text-align: right; padding-right: 2px; }
 .pp-grid-head > div:last-child { text-align: right; }
 .pp-grid-bytelabel {
-  font-size: 10px;
+  font-size: 9.5px;
   color: var(--text-4);
-  letter-spacing: .08em;
+  letter-spacing: .04em;
   text-align: right;
-  padding-right: var(--s-2);
+  padding-right: 2px;
   font-weight: 500;
 }
 .pp-grid-bytehex {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-2);
   text-align: right;
 }
 .pp-bit {
-  aspect-ratio: 1;
+  width: 18px;
+  height: 18px;
   display: grid; place-items: center;
   font-size: 10px;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
   background: var(--surface-2);
-  border-radius: 3px;
+  border-radius: 2px;
   color: var(--text-4);
   position: relative;
-  transition: transform .12s, box-shadow .15s;
+  transition: box-shadow .12s;
   cursor: default;
 }
 .pp-bit.on { color: var(--text-1); background: var(--surface-3); }
 .pp-bit.signal {
   color: var(--sig-ink, var(--accent));
   background: var(--sig-bg, var(--accent-soft));
-  border: 1px solid var(--sig-border, rgba(90,162,255,.35));
+  box-shadow: inset 0 0 0 1px var(--sig-border, rgba(90,162,255,.35));
 }
 .pp-bit.signal.on { background: var(--sig-bg-on, var(--accent)); color: var(--accent-ink); }
 .pp-bit.is-selector {
-  box-shadow: 0 0 0 1px var(--mux) inset;
+  box-shadow: inset 0 0 0 1px var(--mux), 0 0 0 1px var(--mux);
 }
-.pp-bit[data-sigkey]:hover { transform: scale(1.08); z-index: 2; box-shadow: 0 0 0 1px var(--text-1) inset; }
+.pp-bit[data-sigkey]:hover { box-shadow: inset 0 0 0 1px var(--text-1); z-index: 2; }
 
 /* --- Decoded signal table -------------------------------------------- */
 .pp-table {
@@ -1378,8 +1381,6 @@ kbd {
   .pane-header { padding: var(--s-3) var(--s-4); }
   .section { padding: var(--s-5) var(--s-4); }
   .props { grid-template-columns: 1fr 1fr; gap: var(--s-2); }
-  .pp-grid { grid-template-columns: 24px repeat(8, minmax(16px, 1fr)) 32px; }
-  .pp-grid-head { grid-template-columns: 24px repeat(8, minmax(16px, 1fr)) 32px; }
 }
 
 @media (max-width: 479px) {

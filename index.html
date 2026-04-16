@@ -25,6 +25,7 @@
     <div class="topbar-row">
       <h1>CAN Signals</h1>
       <span class="file-label" id="fileLabel"></span>
+      <button class="decoder-btn" id="openPaste" title="Decode pasted frames">Decoder</button>
     </div>
     <div class="search-wrap">
       <span class="icon">&#x1F50D;</span>
@@ -60,6 +61,22 @@
     </div>
   </div>
   <div class="detail-scroll" id="msgScroll"></div>
+</div>
+
+<div class="view hidden" id="pasteView">
+  <div class="detail-header">
+    <div class="back-row">
+      <button class="back-btn" id="pasteBack">&lsaquo;</button>
+      <div class="detail-title">Frame Decoder</div>
+    </div>
+  </div>
+  <div class="paste-wrap">
+    <textarea id="pasteInput" placeholder="7FFs:06A03400032010C0&#10;3FDs:0000003C20010280&#10;..." spellcheck="false"></textarea>
+    <div class="paste-actions">
+      <button class="paste-decode" id="pasteDecode">Decode</button>
+    </div>
+    <div class="paste-output" id="pasteOutput"></div>
+  </div>
 </div>
 
 <script type="module" src="/src/main.ts"></script>

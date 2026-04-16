@@ -1,10 +1,10 @@
-import { $drop, $list, $detail, $msg } from "./dom.ts";
+import { $drop, $list, $detail, $msg, $paste } from "./dom.ts";
 
 export function showView(view: HTMLElement): void {
-  for (const v of [$drop, $list, $detail, $msg]) {
+  for (const v of [$drop, $list, $detail, $msg, $paste]) {
     if (v === view) {
       v.classList.remove("hidden", "hidden-left");
-    } else if (v === $list && (view === $detail || view === $msg)) {
+    } else if (v === $list && (view === $detail || view === $msg || view === $paste)) {
       v.classList.remove("hidden");
       v.classList.add("hidden-left");
     } else {
@@ -14,4 +14,4 @@ export function showView(view: HTMLElement): void {
   }
 }
 
-export { $drop, $list, $detail, $msg };
+export { $drop, $list, $detail, $msg, $paste };

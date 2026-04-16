@@ -32,3 +32,10 @@ export const $msgTitle = byId<HTMLDivElement>("msgTitle");
 export const $msgScroll = byId<HTMLDivElement>("msgScroll");
 export const $msgBack = byId<HTMLButtonElement>("msgBack");
 export const $msgCopy = byId<HTMLButtonElement>("msgCopy");
+
+export const $paste = byId<HTMLDivElement>("pasteView");
+export const $pasteBack = byId<HTMLButtonElement>("pasteBack");
+export const $pasteInput = byId<HTMLTextAreaElement>("pasteInput");
+export const $pasteDecode = byId<HTMLButtonElement>("pasteDecode");
+export const $pasteOutput = byId<HTMLDivElement>("pasteOutput");
+export const $openPaste = byId<HTMLButtonElement>("openPaste");

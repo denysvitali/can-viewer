@@ -13,12 +13,9 @@ export interface SignalDefinition {
   Units?: string;
 }
 
-export interface MuxSignal {
-  [key: string]: unknown;
-}
-
 export interface RawSignal {
   ID: number;
+  Message?: number;
   Bus: number;
   BusName: string;
   MessageName: string;
@@ -26,7 +23,9 @@ export interface RawSignal {
   CycleTime?: number;
   Units?: string;
   Signal?: SignalDefinition;
-  MuxSignal?: MuxSignal;
+  // Bit layout of the multiplexor selector that gates this signal.
+  // Populated with zero-width placeholder when the signal isn't muxed.
+  MuxSignal?: SignalDefinition;
   MuxID?: number;
   Muxer?: string;
   ValueDescription?: Record<string, string>;

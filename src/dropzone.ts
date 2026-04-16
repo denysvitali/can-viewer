@@ -52,11 +52,14 @@ function ingest(data: SignalDatabase): void {
   state.sigByKey = {};
 
   for (const [key, raw] of Object.entries(data)) {
-    const sig: Signal = { key, ...raw };
+    // The JSON generator OR's a bus-specific prefix into `ID` (e.g. 0x1000 for
+    // CH bus). The true 11-bit CAN ID lives in `Message`; prefer it when present.
+    const canonicalId = typeof raw.Message === "number" ? raw.Message : raw.ID;
+    const sig: Signal = { key, ...raw, ID: canonicalId };
     state.allSignals.push(sig);
     state.sigByKey[key] = sig;
 
-    const mid = raw.ID;
+    const mid = canonicalId;
     let msg = state.messages[mid];
     if (!msg) {
       msg = {

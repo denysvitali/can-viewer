@@ -37,8 +37,25 @@ export function openMessage(mid: number): void {
     </div>`;
   }
 
-  h += `<div class="section"><div class="section-label">Signals</div></div>`;
+  // Split into non-muxed signals (incl. selectors) and groups keyed by
+  // `${Muxer}=${MuxID}` so each mux variant renders as its own section.
+  const muxedKey = (s: Signal) =>
+    typeof s.MuxID === "number" && s.MuxID >= 0 && s.Muxer ? `${s.Muxer}=${s.MuxID}` : "";
+  const selectorNames = new Set(msgSigs.map(muxedKey).filter(Boolean).map((k) => k.split("=")[0]));
+  const plain: Signal[] = [];
+  const muxGroups = new Map<string, Signal[]>();
   for (const s of msgSigs) {
+    const mk = muxedKey(s);
+    if (mk) {
+      const arr = muxGroups.get(mk) ?? [];
+      arr.push(s);
+      muxGroups.set(mk, arr);
+    } else {
+      plain.push(s);
+    }
+  }
+
+  const renderSig = (s: Signal): string => {
     const sig = s.Signal ?? {};
     const color = signalColor(s.key);
     const scaleStr = sig.Scale && sig.Scale !== 1 ? ` &middot; \u00D7${sig.Scale}` : "";
@@ -48,14 +65,28 @@ export function openMessage(mid: number): void {
     const bitStr = sig.StartPosition !== undefined
       ? `bit ${sig.StartPosition}:${sig.Width ?? "?"}`
       : "";
-
-    h += `<div class="msg-signal-item" data-sigkey="${esc(s.key)}">
+    const isSelector = s.Name && selectorNames.has(s.Name);
+    const badge = isSelector ? ` <span class="mux-badge">MUX</span>` : "";
+    return `<div class="msg-signal-item" data-sigkey="${esc(s.key)}">
       <div class="msg-sig-color" style="background:${color}"></div>
       <div class="msg-sig-info">
-        <div class="msg-sig-name">${esc(s.Name || s.key)}</div>
+        <div class="msg-sig-name">${esc(s.Name || s.key)}${badge}</div>
         <div class="msg-sig-detail">${bitStr}${scaleStr}${offsetStr}${signedStr}${unitsStr}</div>
       </div>
     </div>`;
+  };
+
+  h += `<div class="section"><div class="section-label">Signals</div></div>`;
+  for (const s of plain) h += renderSig(s);
+
+  const sortedMuxKeys = [...muxGroups.keys()].sort((a, b) => {
+    const [ma, va] = a.split("="); const [mb, vb] = b.split("=");
+    return ma!.localeCompare(mb!) || Number(va) - Number(vb);
+  });
+  for (const mk of sortedMuxKeys) {
+    const [muxer, mid] = mk.split("=");
+    h += `<div class="section"><div class="section-label mux-group-label">When <code>${esc(muxer!)}</code> = ${esc(mid!)}</div></div>`;
+    for (const s of muxGroups.get(mk)!) h += renderSig(s);
   }
 
   $msgScroll.innerHTML = h;

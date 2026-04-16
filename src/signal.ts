@@ -48,11 +48,44 @@ export function openSignal(idx: number): void {
   h += prop("Offset", sig.Offset);
   h += prop("Clear Mask", sig.ClearMask !== undefined ? "0x" + sig.ClearMask.toString(16).toUpperCase() : "—");
   h += prop("Units", s.Units ?? "—");
-  if (typeof s.MuxID === "number" && s.MuxID >= 0) {
-    h += prop("Mux ID", s.MuxID);
-    h += prop("Muxer", s.Muxer ?? "—");
-  }
   h += `</div></div>`;
+
+  // Multiplexor context: either this signal is gated by a selector, or it *is*
+  // a selector that gates other signals in the same message.
+  const msgForMux = state.messages[s.ID];
+  const sameMsgSigs = msgForMux
+    ? msgForMux.signals.map((k) => state.sigByKey[k]).filter((x): x is typeof s => Boolean(x))
+    : [];
+  const isMuxed = typeof s.MuxID === "number" && s.MuxID >= 0 && !!s.Muxer;
+  const gatedChildren = s.Name
+    ? sameMsgSigs.filter((o) => o.Muxer === s.Name && typeof o.MuxID === "number" && o.MuxID >= 0)
+    : [];
+  const isSelector = gatedChildren.length > 0;
+
+  if (isMuxed || isSelector) {
+    h += `<div class="section"><div class="section-label">Multiplexor</div><div class="props">`;
+    if (isMuxed) {
+      const mux = s.MuxSignal;
+      const selector = sameMsgSigs.find((o) => o.Name === s.Muxer);
+      const muxerHtml = selector
+        ? `<span class="rel-chip" data-relkey="${esc(selector.key)}">${esc(s.Muxer!)}</span>`
+        : esc(s.Muxer!);
+      h += prop("Role", "Muxed signal");
+      h += `<div class="prop"><div class="pl">Present When</div><div class="pv">${muxerHtml} = ${esc(String(s.MuxID))}</div></div>`;
+      if (mux && mux.Width) {
+        h += prop("Selector Bits", `bit ${mux.StartPosition ?? "?"}, width ${mux.Width}`);
+      }
+    } else {
+      h += prop("Role", "Mux selector");
+      const ids = gatedChildren
+        .map((c) => c.MuxID as number)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .sort((a, b) => a - b);
+      h += prop("Gates Variants", ids.join(", "));
+      h += prop("Gated Signals", gatedChildren.length);
+    }
+    h += `</div></div>`;
+  }
 
   // Formula
   if (sig.Scale !== undefined && sig.Scale !== 0 && sig.Width) {

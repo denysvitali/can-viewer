@@ -357,6 +357,25 @@ button { font-family: inherit; }
 .msg-sig-info { flex: 1; min-width: 0; }
 .msg-sig-name { font-size: 14px; font-weight: 600; word-break: break-all; }
 .msg-sig-detail { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.mux-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  border-radius: 4px;
+  background: var(--accent-bg, rgba(255,165,0,.2));
+  color: var(--accent, orange);
+  vertical-align: middle;
+}
+.mux-group-label code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
 
 /* Frame overview in message view */
 .frame-overview {

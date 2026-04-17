@@ -1399,14 +1399,14 @@ kbd {
   .split { grid-template-columns: 1fr; }
   .split-aside { border-right: none; }
 
-  .split-main {
+  #signalsTab .split-main {
     position: absolute;
     inset: 0;
     pointer-events: none;
   }
-  .empty-state { display: none; }
-  .pane { pointer-events: auto; }
-  .pane.hidden { pointer-events: none; }
+  #signalsTab .empty-state { display: none; }
+  #signalsTab .pane { pointer-events: auto; }
+  #signalsTab .pane.hidden { pointer-events: none; }
 
   /* Decoder: stacked input on top, results below */
   #decoderTab .split {

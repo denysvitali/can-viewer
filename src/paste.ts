@@ -283,7 +283,7 @@ function renderRewritesSection(
 }
 
 function renderRewrite(
-  _mid: number,
+  mid: number,
   idx: number,
   r: RewritePair,
   msgSigs: Signal[],
@@ -312,11 +312,16 @@ function renderRewrite(
     ? renderChangedSignalsTable(changed, msgSigs)
     : "";
 
+  const copyBtn = `<button class="pp-copy rw-copy" data-mid="${mid}" data-ridx="${idx}" title="Copy this rewrite diff" aria-label="Copy rewrite">
+    ${copyIconSvg()}
+  </button>`;
+
   return `<div class="paste-rewrite" data-ridx="${idx}">
     <div class="rw-head">
       <span class="rw-chip">rewrite</span>
       ${countTag}
       <span class="rw-meta">${changedSummary(byteChanged, bitDiff)}</span>
+      ${copyBtn}
     </div>
     <div class="rw-rows">
       <div class="rw-row">
@@ -665,6 +670,24 @@ function onOutputClick(e: MouseEvent): void {
     const mid = Number(copyBlock.dataset.mid);
     const block = lastBlocks.get(mid);
     if (block) copyText(formatBlock(block), copyBlock);
+    return;
+  }
+
+  // Copy rewrite diff (tested before generic .pp-copy since .rw-copy carries
+  // both classes).
+  const copyRw = target.closest<HTMLElement>(".rw-copy");
+  if (copyRw) {
+    e.stopPropagation();
+    const mid = Number(copyRw.dataset.mid);
+    const idx = Number(copyRw.dataset.ridx);
+    const block = lastBlocks.get(mid);
+    const r = block?.rewrites[idx];
+    if (block && r) {
+      const header = block.msg
+        ? `${block.msg.name}\t${formatHexId(mid)}`
+        : `(unknown)\t${formatHexId(mid)}`;
+      copyText(`${header}\n\n${formatRewrite(r, idx + 1)}`, copyRw);
+    }
     return;
   }
 

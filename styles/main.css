@@ -1446,6 +1446,7 @@ kbd {
   color: var(--text-3);
   letter-spacing: .04em;
 }
+.rw-copy { margin-left: 0; }
 
 .rw-rows {
   display: flex;

@@ -20,12 +20,25 @@ interface DecodedPayload {
   selectorName?: string;
   selectorRaw?: number;
 }
+interface RewritePair {
+  prev: Uint8Array;
+  next: Uint8Array;
+  count: number;
+  order: number;
+  prevDecoded: DecodedSignal[];
+  nextDecoded: DecodedSignal[];
+  prevSelectorKey?: string;
+  prevSelectorRaw?: number;
+  nextSelectorKey?: string;
+  nextSelectorRaw?: number;
+}
 interface DecodedBlock {
   id: number;
   msg?: Message;
   msgSigs: Signal[];
   frameCount: number;
   payloads: DecodedPayload[];
+  rewrites: RewritePair[];
 }
 // Cache decoded output by CAN id so the copy handler can reformat the
 // block without re-parsing the textarea.
@@ -60,7 +73,9 @@ function hint(): string {
     Paste frames one per line in the form <code>ID:DATA</code> or <code>IDs:DATA</code>,
     then hit <strong>Decode</strong>.<br>Bit values are rendered against the loaded
     database and <strong>muxed signals are gated by the selector</strong> bits you
-    can see painted in the grid.
+    can see painted in the grid.<br>Prefix a line with <code>*</code> (e.g.
+    <code>*7FFs:…</code>) to mark it as a rewritten frame — it will be diffed
+    against the previous same-ID frame.
   </div>`;
 }
 
@@ -80,9 +95,14 @@ function renderDecoded(): void {
     return;
   }
 
-  // Group by ID, dedup identical payloads (byte-wise).
+  // Group by ID, dedup identical payloads (byte-wise). In the same sweep,
+  // pair each `*` rewrite frame with the most recent same-ID frame so we can
+  // surface a diff alongside the raw payloads.
   const byId = new Map<number, { payload: string; data: Uint8Array; count: number; order: number }[]>();
+  const rewritesById = new Map<number, Map<string, Omit<RewritePair, "prevDecoded" | "nextDecoded" | "prevSelectorKey" | "prevSelectorRaw" | "nextSelectorKey" | "nextSelectorRaw">>>();
+  const lastBytesById = new Map<number, Uint8Array>();
   let order = 0;
+  let rwOrder = 0;
   for (const f of frames) {
     const key = bytesToHex(f.data);
     const arr = byId.get(f.id) ?? [];
@@ -90,6 +110,19 @@ function renderDecoded(): void {
     if (existing) existing.count++;
     else arr.push({ payload: key, data: f.data, count: 1, order: order++ });
     byId.set(f.id, arr);
+
+    if (f.rewritten) {
+      const prev = lastBytesById.get(f.id);
+      if (prev) {
+        const pairKey = bytesToHex(prev) + "|" + key;
+        const bucket = rewritesById.get(f.id) ?? new Map();
+        const pair = bucket.get(pairKey);
+        if (pair) pair.count++;
+        else bucket.set(pairKey, { prev, next: f.data, count: 1, order: rwOrder++ });
+        rewritesById.set(f.id, bucket);
+      }
+    }
+    lastBytesById.set(f.id, f.data);
   }
 
   const ids = [...byId.keys()].sort((a, b) => a - b);
@@ -102,6 +135,27 @@ function renderDecoded(): void {
     const msgSigs: Signal[] = msg
       ? msg.signals.map((k) => state.sigByKey[k]).filter((s): s is Signal => Boolean(s))
       : [];
+    const rewrites: RewritePair[] = [];
+    const rwBucket = rewritesById.get(id);
+    if (rwBucket) {
+      for (const r of rwBucket.values()) {
+        const prevDecoded = msgSigs.length ? decodeMessage(msgSigs, r.prev) : [];
+        const nextDecoded = msgSigs.length ? decodeMessage(msgSigs, r.next) : [];
+        const prevSel = prevDecoded.find((d) => d.isSelector);
+        const nextSel = nextDecoded.find((d) => d.isSelector);
+        rewrites.push({
+          ...r,
+          prevDecoded,
+          nextDecoded,
+          prevSelectorKey: prevSel?.key,
+          prevSelectorRaw: prevSel?.raw,
+          nextSelectorKey: nextSel?.key,
+          nextSelectorRaw: nextSel?.raw,
+        });
+      }
+      rewrites.sort((a, b) => a.order - b.order);
+    }
+
     const block: DecodedBlock = {
       id,
       msg,
@@ -119,12 +173,14 @@ function renderDecoded(): void {
           selectorRaw: selector?.raw,
         };
       }),
+      rewrites,
     };
     lastBlocks.set(id, block);
   }
 
   // Render.
   const totalPayloads = [...lastBlocks.values()].reduce((n, b) => n + b.payloads.length, 0);
+  const totalRewrites = [...lastBlocks.values()].reduce((n, b) => n + b.rewrites.length, 0);
   let h = "";
   h += `<div class="paste-summary-bar">
     <span class="summary-stat"><strong>${frames.length}</strong><span class="stat-label">frames</span></span>
@@ -132,6 +188,7 @@ function renderDecoded(): void {
     <span class="summary-stat"><strong>${ids.length}</strong><span class="stat-label">IDs</span></span>
     <span class="summary-sep"></span>
     <span class="summary-stat"><strong>${totalPayloads}</strong><span class="stat-label">unique payloads</span></span>
+    ${totalRewrites ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--mux)">${totalRewrites}</strong><span class="stat-label">rewrites</span></span>` : ""}
     ${errors.length ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--warn)">${errors.length}</strong><span class="stat-label">skipped</span></span>` : ""}
     <button class="ghost-btn pb-copy-all" title="Copy all decoded blocks">
       ${copyIconSvg()}
@@ -154,7 +211,7 @@ function renderDecoded(): void {
 }
 
 function renderIdBlock(block: DecodedBlock): string {
-  const { id, msg, msgSigs, frameCount, payloads } = block;
+  const { id, msg, msgSigs, frameCount, payloads, rewrites } = block;
   const known = !!msg;
   const header = known
     ? `<div>
@@ -197,10 +254,193 @@ function renderIdBlock(block: DecodedBlock): string {
     body += renderPayload(id, i, payloads[i]!, msgSigs);
   }
 
+  const rewritesSection = rewrites.length
+    ? renderRewritesSection(id, rewrites, msgSigs)
+    : "";
+
   return `<div class="paste-block${known ? "" : " unknown"}" data-mid="${id}">
     <div class="pb-header">${header}${headerActions}</div>
     <div class="pb-body">${body}</div>
+    ${rewritesSection}
   </div>`;
+}
+
+function renderRewritesSection(
+  mid: number,
+  rewrites: RewritePair[],
+  msgSigs: Signal[],
+): string {
+  const items = rewrites.map((r, i) => renderRewrite(mid, i, r, msgSigs)).join("");
+  const count = rewrites.length;
+  return `<div class="pb-rewrites">
+    <div class="pb-rewrites-head">
+      <span class="rw-title">Rewrites</span>
+      <span class="rw-subtitle">diff against previous same-ID frame</span>
+      <span class="rw-count">${count} unique</span>
+    </div>
+    <div class="pb-rewrites-body">${items}</div>
+  </div>`;
+}
+
+function renderRewrite(
+  _mid: number,
+  idx: number,
+  r: RewritePair,
+  msgSigs: Signal[],
+): string {
+  const len = Math.max(r.prev.length, r.next.length);
+  const byteChanged: boolean[] = [];
+  const bitDiff: boolean[] = new Array(len * 8).fill(false);
+  for (let i = 0; i < len; i++) {
+    const a = r.prev[i] ?? 0;
+    const b = r.next[i] ?? 0;
+    byteChanged[i] = a !== b;
+    const x = a ^ b;
+    for (let bit = 0; bit < 8; bit++) {
+      if ((x >> bit) & 1) bitDiff[i * 8 + bit] = true;
+    }
+  }
+
+  const prevHex = diffHexRow(r.prev, byteChanged, len);
+  const nextHex = diffHexRow(r.next, byteChanged, len);
+  const countTag = r.count > 1 ? `<span class="pp-count">×${r.count}</span>` : "";
+
+  const xorStrip = diffBitStrip(bitDiff, len);
+
+  const changed = msgSigs.length ? diffSignals(r.prevDecoded, r.nextDecoded) : [];
+  const sigTable = msgSigs.length
+    ? renderChangedSignalsTable(changed, msgSigs)
+    : "";
+
+  return `<div class="paste-rewrite" data-ridx="${idx}">
+    <div class="rw-head">
+      <span class="rw-chip">rewrite</span>
+      ${countTag}
+      <span class="rw-meta">${changedSummary(byteChanged, bitDiff)}</span>
+    </div>
+    <div class="rw-rows">
+      <div class="rw-row">
+        <span class="rw-tag rw-tag-prev">prev</span>
+        ${prevHex}
+      </div>
+      <div class="rw-row">
+        <span class="rw-tag rw-tag-next">new *</span>
+        ${nextHex}
+      </div>
+    </div>
+    ${xorStrip}
+    ${sigTable}
+  </div>`;
+}
+
+function diffHexRow(data: Uint8Array, changed: boolean[], len: number): string {
+  let h = '<div class="pp-hex-row rw-hex-row">';
+  for (let i = 0; i < len; i++) {
+    const byte = i < data.length ? data[i]!.toString(16).toUpperCase().padStart(2, "0") : "—";
+    const cls = "pp-hex-byte" + (changed[i] ? " rw-hex-changed" : "");
+    h += `<span class="${cls}">${byte}</span>`;
+  }
+  h += "</div>";
+  return h;
+}
+
+function diffBitStrip(bitDiff: boolean[], len: number): string {
+  if (!bitDiff.some(Boolean)) return "";
+  let h = '<div class="rw-bitstrip" aria-label="Changed bits (XOR)">';
+  h += '<span class="rw-bitstrip-label">Δ bits</span>';
+  h += '<div class="rw-bitstrip-grid">';
+  for (let i = 0; i < len; i++) {
+    h += `<div class="rw-byte">`;
+    for (let bit = 7; bit >= 0; bit--) {
+      const on = bitDiff[i * 8 + bit];
+      h += `<div class="rw-bit${on ? " on" : ""}"></div>`;
+    }
+    h += `</div>`;
+  }
+  h += "</div></div>";
+  return h;
+}
+
+function changedSummary(byteChanged: boolean[], bitDiff: boolean[]): string {
+  const bytes = byteChanged.filter(Boolean).length;
+  const bits = bitDiff.filter(Boolean).length;
+  if (bits === 0) return "identical";
+  return `${bits} bit${bits === 1 ? "" : "s"} across ${bytes} byte${bytes === 1 ? "" : "s"}`;
+}
+
+interface ChangedSignal {
+  key: string;
+  name: string;
+  units: string;
+  prev?: DecodedSignal;
+  next?: DecodedSignal;
+}
+
+function diffSignals(prev: DecodedSignal[], next: DecodedSignal[]): ChangedSignal[] {
+  const prevMap = new Map<string, DecodedSignal>();
+  const nextMap = new Map<string, DecodedSignal>();
+  for (const d of prev) prevMap.set(d.key, d);
+  for (const d of next) nextMap.set(d.key, d);
+  const keys = new Set<string>([...prevMap.keys(), ...nextMap.keys()]);
+  const out: ChangedSignal[] = [];
+  for (const key of keys) {
+    const p = prevMap.get(key);
+    const n = nextMap.get(key);
+    const presenceChanged = !p || !n;
+    const valueChanged = !!(p && n) && p.raw !== n.raw;
+    if (!presenceChanged && !valueChanged) continue;
+    out.push({
+      key,
+      name: (n ?? p)!.name,
+      units: (n ?? p)!.units,
+      prev: p,
+      next: n,
+    });
+  }
+  return out;
+}
+
+function renderChangedSignalsTable(changed: ChangedSignal[], msgSigs: Signal[]): string {
+  if (!changed.length) {
+    return `<div class="rw-sig-empty">No decoded signal values changed.</div>`;
+  }
+  let rows = "";
+  for (const c of changed) {
+    const sigDef = msgSigs.find((s) => s.key === c.key)?.Signal;
+    const bits = sigDef && sigDef.Width
+      ? `<span class="pp-bits">${sigDef.StartPosition}:${sigDef.Width}</span>`
+      : "";
+    const color = signalColor(c.key);
+    const dot = `<span class="pp-dot" style="background:${color}"></span>`;
+    const tag = !c.prev
+      ? `<span class="rw-pill rw-added">added</span>`
+      : !c.next
+        ? `<span class="rw-pill rw-removed">removed</span>`
+        : "";
+    rows += `<tr data-sigkey="${esc(c.key)}">
+      <td class="pp-name">${dot}${esc(c.name)}${bits}${tag}</td>
+      <td class="pp-raw rw-before">${formatSigCell(c.prev, c.units)}</td>
+      <td class="rw-arrow">→</td>
+      <td class="pp-raw rw-after">${formatSigCell(c.next, c.units)}</td>
+    </tr>`;
+  }
+  return `<table class="pp-table rw-sig-table">
+    <thead><tr>
+      <th>Signal</th>
+      <th style="text-align:right">Before</th>
+      <th></th>
+      <th style="text-align:right">After</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function formatSigCell(d: DecodedSignal | undefined, units: string): string {
+  if (!d) return `<span class="rw-missing">—</span>`;
+  const phys = Number.isFinite(d.physical) ? fmt(d.physical) : "—";
+  const u = units ? `<span class="pp-units">${esc(units)}</span>` : "";
+  const vd = d.valueDescription ? ` <span class="pp-enum">${esc(d.valueDescription)}</span>` : "";
+  return `<span class="rw-raw">${d.raw}</span><span class="rw-phys">${phys}${u}</span>${vd}`;
 }
 
 function renderPayload(
@@ -302,7 +542,7 @@ function bytesToHex(data: Uint8Array): string {
 /* ---------------- Clipboard formatting ---------------- */
 
 function formatBlock(block: DecodedBlock): string {
-  const { id, msg, payloads } = block;
+  const { id, msg, payloads, rewrites } = block;
   const header = msg
     ? `${msg.name}\t${formatHexId(id)}\t${msg.bus}\t${msg.cycleTime ? msg.cycleTime + "ms" : ""}`
     : `(unknown)\t${formatHexId(id)}`;
@@ -310,7 +550,37 @@ function formatBlock(block: DecodedBlock): string {
   for (let i = 0; i < payloads.length; i++) {
     out.push("", formatPayload(payloads[i]!, i + 1));
   }
+  if (rewrites.length) {
+    out.push("", `Rewrites (${rewrites.length} unique)`);
+    for (let i = 0; i < rewrites.length; i++) {
+      out.push("", formatRewrite(rewrites[i]!, i + 1));
+    }
+  }
   return out.join("\n");
+}
+
+function formatRewrite(r: RewritePair, label: number): string {
+  const prevHex = [...r.prev].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+  const nextHex = [...r.next].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+  const sub = r.count > 1 ? ` (×${r.count})` : "";
+  const lines = [
+    `Rewrite ${label}${sub}`,
+    `  prev:  ${prevHex}`,
+    `  new *: ${nextHex}`,
+  ];
+  const changed = diffSignals(r.prevDecoded, r.nextDecoded);
+  if (!changed.length) {
+    lines.push("  (no decoded signal changes)");
+    return lines.join("\n");
+  }
+  lines.push(["Signal", "Before", "After"].join("\t"));
+  for (const c of changed) {
+    const before = c.prev ? `${c.prev.raw}` + (Number.isFinite(c.prev.physical) ? ` (${c.prev.physical}${c.units ? " " + c.units : ""})` : "") : "—";
+    const after = c.next ? `${c.next.raw}` + (Number.isFinite(c.next.physical) ? ` (${c.next.physical}${c.units ? " " + c.units : ""})` : "") : "—";
+    const tag = !c.prev ? " [added]" : !c.next ? " [removed]" : "";
+    lines.push([c.name + tag, before, after].join("\t"));
+  }
+  return lines.join("\n");
 }
 
 function formatPayload(p: DecodedPayload, label?: number): string {

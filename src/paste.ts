@@ -75,7 +75,8 @@ function hint(): string {
     database and <strong>muxed signals are gated by the selector</strong> bits you
     can see painted in the grid.<br>Prefix a line with <code>*</code> (e.g.
     <code>*7FFs:…</code>) to mark it as a rewritten frame — it will be diffed
-    against the previous same-ID frame.
+    against the previous same-ID frame.<br>Prefix with <code>></code> (e.g.
+    <code>>*7FFs:…</code>) to mark it as a transmitted (tx) frame.
   </div>`;
 }
 

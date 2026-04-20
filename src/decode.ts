@@ -5,6 +5,7 @@ export interface ParsedFrame {
   data: Uint8Array;
   raw: string;
   rewritten: boolean;
+  tx: boolean;
 }
 
 export interface ParseResult {
@@ -14,10 +15,10 @@ export interface ParseResult {
 
 // Accepts lines like `7FFs:06A03400032010C0` or `7FFx:...` (ID:data).
 // The char between ID and ':' is tolerated but ignored — typically 's' for
-// standard or 'x' for extended. An optional leading `*` marks the frame as
-// a rewritten/edited variant so callers can diff it against the prior frame
-// of the same ID.
-const LINE_RE = /^\s*(\*)?\s*([0-9A-Fa-f]+)[sxSX]?\s*:\s*([0-9A-Fa-f]+)\s*$/;
+// standard or 'x' for extended. An optional leading `>` marks the frame as
+// transmitted (tx), and an optional `*` marks it as a rewritten/edited variant
+// so callers can diff it against the prior frame of the same ID.
+const LINE_RE = /^\s*(>)?(\*)?\s*([0-9A-Fa-f]+)[sxSX]?\s*:\s*([0-9A-Fa-f]+)\s*$/;
 
 export function parseFrames(input: string): ParseResult {
   const frames: ParsedFrame[] = [];
@@ -31,9 +32,10 @@ export function parseFrames(input: string): ParseResult {
       errors.push({ line: i + 1, text, reason: "unrecognised format" });
       continue;
     }
-    const rewritten = !!m[1];
-    const id = parseInt(m[2]!, 16);
-    const hex = m[3]!;
+    const tx = !!m[1];
+    const rewritten = !!m[2];
+    const id = parseInt(m[3]!, 16);
+    const hex = m[4]!;
     if (hex.length % 2 !== 0) {
       errors.push({ line: i + 1, text, reason: "data has odd hex length" });
       continue;
@@ -42,7 +44,7 @@ export function parseFrames(input: string): ParseResult {
     for (let b = 0; b < data.length; b++) {
       data[b] = parseInt(hex.slice(b * 2, b * 2 + 2), 16);
     }
-    frames.push({ id, data, raw: text.trim(), rewritten });
+    frames.push({ id, data, raw: text.trim(), rewritten, tx });
   }
   return { frames, errors };
 }

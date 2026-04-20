@@ -40,6 +40,23 @@ interface DecodedBlock {
   payloads: DecodedPayload[];
   rewrites: RewritePair[];
 }
+
+interface SequentialEntry {
+  seqIdx: number;
+  id: number;
+  data: Uint8Array;
+  raw: string;
+  tx: boolean;
+  rewritten: boolean;
+  decoded: DecodedSignal[];
+  selectorKey?: string;
+  selectorName?: string;
+  selectorRaw?: number;
+  prevData?: Uint8Array;
+  prevDecoded?: DecodedSignal[];
+  prevSelectorKey?: string;
+  prevSelectorRaw?: number;
+}
 // Cache decoded output by CAN id so the copy handler can reformat the
 // block without re-parsing the textarea.
 const lastBlocks = new Map<number, DecodedBlock>();
@@ -96,105 +113,63 @@ function renderDecoded(): void {
     return;
   }
 
-  // Group by ID, dedup identical payloads (byte-wise). In the same sweep,
-  // pair each `*` rewrite frame with the most recent same-ID frame so we can
-  // surface a diff alongside the raw payloads. Also track original frame
-  // sequence so blocks render in the same order they appeared in the input.
-  const byId = new Map<number, { payload: string; data: Uint8Array; count: number; order: number }[]>();
-  const rewritesById = new Map<number, Map<string, Omit<RewritePair, "prevDecoded" | "nextDecoded" | "prevSelectorKey" | "prevSelectorRaw" | "nextSelectorKey" | "nextSelectorRaw">>>();
-  const lastBytesById = new Map<number, Uint8Array>();
-  const frameOrder: number[] = []; // id-order list, one entry per input frame line
-  let order = 0;
-  let rwOrder = 0;
+  // Build sequential entries: one per unique (id, data) in order of first appearance.
+  const seen = new Set<string>();
+  const entries: SequentialEntry[] = [];
+  const lastDataById = new Map<number, Uint8Array>();
+  let seqIdx = 0;
+
   for (const f of frames) {
-    const key = bytesToHex(f.data);
-    const arr = byId.get(f.id) ?? [];
-    const existing = arr.find((x) => x.payload === key);
-    if (existing) existing.count++;
-    else {
-      arr.push({ payload: key, data: f.data, count: 1, order: order++ });
-      frameOrder.push(f.id);
-    }
-    byId.set(f.id, arr);
+    const key = bytesToHex(f.data) + "|" + f.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-    if (f.rewritten) {
-      const prev = lastBytesById.get(f.id);
-      if (prev) {
-        const pairKey = bytesToHex(prev) + "|" + key;
-        const bucket = rewritesById.get(f.id) ?? new Map();
-        const pair = bucket.get(pairKey);
-        if (pair) pair.count++;
-        else bucket.set(pairKey, { prev, next: f.data, count: 1, order: rwOrder++ });
-        rewritesById.set(f.id, bucket);
-      }
-    }
-    lastBytesById.set(f.id, f.data);
-  }
-
-  // Preserve input sequence: deduplicated list of IDs in order of first appearance
-  const ids = frameOrder;
-
-  // Build + cache blocks.
-  for (const id of ids) {
-    const payloads = byId.get(id)!;
-    payloads.sort((a, b) => a.order - b.order);
-    const msg = state.messages[id];
+    const msg = state.messages[f.id];
     const msgSigs: Signal[] = msg
       ? msg.signals.map((k) => state.sigByKey[k]).filter((s): s is Signal => Boolean(s))
       : [];
-    const rewrites: RewritePair[] = [];
-    const rwBucket = rewritesById.get(id);
-    if (rwBucket) {
-      for (const r of rwBucket.values()) {
-        const prevDecoded = msgSigs.length ? decodeMessage(msgSigs, r.prev) : [];
-        const nextDecoded = msgSigs.length ? decodeMessage(msgSigs, r.next) : [];
+    const decoded = msgSigs.length ? decodeMessage(msgSigs, f.data) : [];
+    const selector = decoded.find((d) => d.isSelector);
+
+    const entry: SequentialEntry = {
+      seqIdx: seqIdx++,
+      id: f.id,
+      data: f.data,
+      raw: f.raw,
+      tx: f.tx,
+      rewritten: f.rewritten,
+      decoded,
+      selectorKey: selector?.key,
+      selectorName: selector?.name,
+      selectorRaw: selector?.raw,
+    };
+
+    if (f.rewritten) {
+      const prevData = lastDataById.get(f.id);
+      if (prevData) {
+        const prevDecoded = msgSigs.length ? decodeMessage(msgSigs, prevData) : [];
         const prevSel = prevDecoded.find((d) => d.isSelector);
-        const nextSel = nextDecoded.find((d) => d.isSelector);
-        rewrites.push({
-          ...r,
-          prevDecoded,
-          nextDecoded,
-          prevSelectorKey: prevSel?.key,
-          prevSelectorRaw: prevSel?.raw,
-          nextSelectorKey: nextSel?.key,
-          nextSelectorRaw: nextSel?.raw,
-        });
+        entry.prevData = prevData;
+        entry.prevDecoded = prevDecoded;
+        entry.prevSelectorKey = prevSel?.key;
+        entry.prevSelectorRaw = prevSel?.raw;
       }
-      rewrites.sort((a, b) => a.order - b.order);
     }
 
-    const block: DecodedBlock = {
-      id,
-      msg,
-      msgSigs,
-      frameCount: payloads.reduce((n, p) => n + p.count, 0),
-      payloads: payloads.map((p) => {
-        const decoded = msgSigs.length ? decodeMessage(msgSigs, p.data) : [];
-        const selector = decoded.find((d) => d.isSelector);
-        return {
-          data: p.data,
-          count: p.count,
-          decoded,
-          selectorKey: selector?.key,
-          selectorName: selector?.name,
-          selectorRaw: selector?.raw,
-        };
-      }),
-      rewrites,
-    };
-    lastBlocks.set(id, block);
+    lastDataById.set(f.id, f.data);
+    entries.push(entry);
   }
 
   // Render.
-  const totalPayloads = [...lastBlocks.values()].reduce((n, b) => n + b.payloads.length, 0);
-  const totalRewrites = [...lastBlocks.values()].reduce((n, b) => n + b.rewrites.length, 0);
+  const uniqueIds = new Set(entries.map((e) => e.id)).size;
+  const totalRewrites = entries.filter((e) => e.rewritten).length;
   let h = "";
   h += `<div class="paste-summary-bar">
     <span class="summary-stat"><strong>${frames.length}</strong><span class="stat-label">frames</span></span>
     <span class="summary-sep"></span>
-    <span class="summary-stat"><strong>${ids.length}</strong><span class="stat-label">IDs</span></span>
+    <span class="summary-stat"><strong>${uniqueIds}</strong><span class="stat-label">IDs</span></span>
     <span class="summary-sep"></span>
-    <span class="summary-stat"><strong>${totalPayloads}</strong><span class="stat-label">unique payloads</span></span>
+    <span class="summary-stat"><strong>${entries.length}</strong><span class="stat-label">shown</span></span>
     ${totalRewrites ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--mux)">${totalRewrites}</strong><span class="stat-label">rewrites</span></span>` : ""}
     ${errors.length ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--warn)">${errors.length}</strong><span class="stat-label">skipped</span></span>` : ""}
     <button class="ghost-btn pb-copy-all" title="Copy all decoded blocks">
@@ -212,95 +187,124 @@ function renderDecoded(): void {
     h += `</ul></details>`;
   }
 
-  for (const id of ids) h += renderIdBlock(lastBlocks.get(id)!);
+  for (const entry of entries) h += renderSequentialEntry(entry);
 
   $pasteOutput.innerHTML = h;
 }
 
-function renderIdBlock(block: DecodedBlock): string {
-  const { id, msg, msgSigs, frameCount, payloads, rewrites } = block;
+function renderSequentialEntry(entry: SequentialEntry): string {
+  const { id, data, tx, rewritten, decoded, selectorKey, selectorRaw, prevData, prevDecoded } = entry;
+  const msg = state.messages[id];
+  const msgSigs: Signal[] = msg
+    ? msg.signals.map((k) => state.sigByKey[k]).filter((s): s is Signal => Boolean(s))
+    : [];
   const known = !!msg;
+
+  const hexRow = prettyHexRow(data);
+  const txTag = tx ? `<span class="pp-tx-tag">TX</span>` : "";
+  const rwTag = rewritten ? `<span class="pp-rw-tag">RW</span>` : "";
+
+  const grid = renderPayloadGrid(msgSigs, data, { selectorKey, selectorRaw });
+
+  const rowFor = (d: DecodedSignal, inMuxGroup = false): string => {
+    const physStr = Number.isFinite(d.physical) ? fmt(d.physical) : "—";
+    const vd = d.valueDescription ? ` <span class="pp-enum">${esc(d.valueDescription)}</span>` : "";
+    const units = d.units ? `<span class="pp-units">${esc(d.units)}</span>` : "";
+    const color = signalColor(d.key);
+    const dot = `<span class="pp-dot" style="background:${color}"></span>`;
+    const badge = d.isSelector
+      ? ` <span class="mux-badge">MUX</span>`
+      : inMuxGroup
+        ? ` <span class="mux-badge" title="Only present for this selector value">ID ${d.muxId}</span>`
+        : "";
+    const sig = msgSigs.find((s) => s.key === d.key)?.Signal;
+    const bits = sig && sig.Width
+      ? `<span class="pp-bits">${sig.StartPosition}:${sig.Width}</span>`
+      : "";
+    return `<tr data-sigkey="${esc(d.key)}">
+      <td class="pp-name">${dot}${esc(d.name)}${badge}${bits}</td>
+      <td class="pp-raw">${d.raw}</td>
+      <td class="pp-phys">${physStr}${units}${vd}</td>
+    </tr>`;
+  };
+
+  const selector = decoded.find((d) => d.isSelector);
+  const nonMuxed = decoded.filter((d) => d.muxId === undefined && !d.isSelector);
+  const muxed = decoded.filter((d) => d.muxId !== undefined);
+
+  let rows = "";
+  if (selector) rows += rowFor(selector);
+  for (const d of nonMuxed) rows += rowFor(d);
+  if (muxed.length) {
+    const selName = selector?.name ?? "selector";
+    rows += `<tr><td colspan="3" class="pp-mux-divider">When ${esc(selName)} = ${selector?.raw ?? "?"}</td></tr>`;
+    for (const d of muxed) rows += rowFor(d, true);
+  }
+
+  const selectorChip = selector
+    ? `<span class="pp-selector-chip" title="Mux selector">${esc(selector.name)}=<b>${selector.raw}</b></span>`
+    : "";
+
   const header = known
-    ? `<div>
-        <div class="pb-title-row">
-          <span class="pb-name">${esc(msg!.name)}</span>
-          <span class="pb-id">${formatHexId(id)}</span>
-        </div>
-        <div class="pb-meta">
-          <span><b>${msgSigs.length}</b> signals</span>
-          <span><b>${frameCount}</b> frames</span>
-          <span><b>${payloads.length}</b> unique</span>
-          ${msg!.cycleTime ? `<span>cycle <b>${msg!.cycleTime}ms</b></span>` : ""}
-          ${msg!.bus ? `<span>bus <b>${esc(msg!.bus)}</b></span>` : ""}
-        </div>
+    ? `<div class="pb-title-row">
+        <span class="pb-name">${esc(msg!.name)}</span>
+        <span class="pb-id">${formatHexId(id)}</span>
+        ${txTag}${rwTag}
+      </div>
+      <div class="pb-meta">
+        <span><b>${msgSigs.length}</b> signals</span>
+        ${msg!.cycleTime ? `<span>cycle <b>${msg!.cycleTime}ms</b></span>` : ""}
+        ${msg!.bus ? `<span>bus <b>${esc(msg!.bus)}</b></span>` : ""}
       </div>`
-    : `<div>
-        <div class="pb-title-row">
-          <span class="pb-name unknown">Unknown message</span>
-          <span class="pb-id">${formatHexId(id)}</span>
-        </div>
-        <div class="pb-meta">
-          <span><b>${frameCount}</b> frames</span>
-          <span><b>${payloads.length}</b> unique</span>
-          <span>not in loaded database</span>
-        </div>
+    : `<div class="pb-title-row">
+        <span class="pb-name unknown">Unknown message</span>
+        <span class="pb-id">${formatHexId(id)}</span>
+        ${txTag}${rwTag}
+      </div>
+      <div class="pb-meta">
+        <span>not in loaded database</span>
       </div>`;
 
   const headerActions = `<div class="pb-actions">
-    <button class="pb-icon-btn pb-copy" data-mid="${id}" title="Copy decoded block" aria-label="Copy">
-      ${copyIconSvg()}
-    </button>
     ${known ? `<button class="pb-open" data-mid="${id}" title="Open message detail">
       Open
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 2 6 5 3 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
     </button>` : ""}
   </div>`;
 
-  let body = "";
-  for (let i = 0; i < payloads.length; i++) {
-    body += renderPayload(id, i, payloads[i]!, msgSigs);
+  let body = `<div class="pp-head">${hexRow}${selectorChip}</div>
+    <div class="pp-body-row">
+      <div class="pp-grid-wrap">${grid}</div>
+      <table class="pp-table">
+        <thead><tr><th>Signal</th><th style="text-align:right">Raw</th><th style="text-align:right">Value</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  // If this is a rewrite, add the diff section
+  if (rewritten && prevData && prevDecoded) {
+    body += renderRewriteDiff(data, prevData, decoded, prevDecoded, msgSigs);
   }
 
-  const rewritesSection = rewrites.length
-    ? renderRewritesSection(id, rewrites, msgSigs)
-    : "";
-
-  return `<div class="paste-block${known ? "" : " unknown"}" data-mid="${id}">
+  return `<div class="paste-block${known ? "" : " unknown"}" data-seq="${entry.seqIdx}">
     <div class="pb-header">${header}${headerActions}</div>
     <div class="pb-body">${body}</div>
-    ${rewritesSection}
   </div>`;
 }
 
-function renderRewritesSection(
-  mid: number,
-  rewrites: RewritePair[],
+function renderRewriteDiff(
+  nextData: Uint8Array,
+  prevData: Uint8Array,
+  nextDecoded: DecodedSignal[],
+  prevDecoded: DecodedSignal[],
   msgSigs: Signal[],
 ): string {
-  const items = rewrites.map((r, i) => renderRewrite(mid, i, r, msgSigs)).join("");
-  const count = rewrites.length;
-  return `<div class="pb-rewrites">
-    <div class="pb-rewrites-head">
-      <span class="rw-title">Rewrites</span>
-      <span class="rw-subtitle">diff against previous same-ID frame</span>
-      <span class="rw-count">${count} unique</span>
-    </div>
-    <div class="pb-rewrites-body">${items}</div>
-  </div>`;
-}
-
-function renderRewrite(
-  mid: number,
-  idx: number,
-  r: RewritePair,
-  msgSigs: Signal[],
-): string {
-  const len = Math.max(r.prev.length, r.next.length);
-  const byteChanged: boolean[] = [];
+  const len = Math.max(prevData.length, nextData.length);
+  const byteChanged: boolean[] = new Array(len).fill(false);
   const bitDiff: boolean[] = new Array(len * 8).fill(false);
   for (let i = 0; i < len; i++) {
-    const a = r.prev[i] ?? 0;
-    const b = r.next[i] ?? 0;
+    const a = prevData[i] ?? 0;
+    const b = nextData[i] ?? 0;
     byteChanged[i] = a !== b;
     const x = a ^ b;
     for (let bit = 0; bit < 8; bit++) {
@@ -308,40 +312,35 @@ function renderRewrite(
     }
   }
 
-  const prevHex = diffHexRow(r.prev, byteChanged, len);
-  const nextHex = diffHexRow(r.next, byteChanged, len);
-  const countTag = r.count > 1 ? `<span class="pp-count">×${r.count}</span>` : "";
+  const prevHex = diffHexRow(prevData, byteChanged, len);
+  const nextHex = diffHexRow(nextData, byteChanged, len);
 
   const xorStrip = diffBitStrip(bitDiff, len);
 
-  const changed = msgSigs.length ? diffSignals(r.prevDecoded, r.nextDecoded) : [];
-  const sigTable = msgSigs.length
-    ? renderChangedSignalsTable(changed, msgSigs)
-    : "";
+  const changed = diffSignals(prevDecoded, nextDecoded);
+  const sigTable = msgSigs.length ? renderChangedSignalsTable(changed, msgSigs) : "";
 
-  const copyBtn = `<button class="pp-copy rw-copy" data-mid="${mid}" data-ridx="${idx}" title="Copy this rewrite diff" aria-label="Copy rewrite">
-    ${copyIconSvg()}
-  </button>`;
-
-  return `<div class="paste-rewrite" data-ridx="${idx}">
-    <div class="rw-head">
-      <span class="rw-chip">rewrite</span>
-      ${countTag}
+  return `<div class="pb-rewrites">
+    <div class="pb-rewrites-head">
+      <span class="rw-title">Rewrite diff</span>
       <span class="rw-meta">${changedSummary(byteChanged, bitDiff)}</span>
-      ${copyBtn}
     </div>
-    <div class="rw-rows">
-      <div class="rw-row">
-        <span class="rw-tag rw-tag-prev">prev</span>
-        ${prevHex}
-      </div>
-      <div class="rw-row">
-        <span class="rw-tag rw-tag-next">new *</span>
-        ${nextHex}
+    <div class="pb-rewrites-body">
+      <div class="paste-rewrite">
+        <div class="rw-rows">
+          <div class="rw-row">
+            <span class="rw-tag rw-tag-prev">prev</span>
+            ${prevHex}
+          </div>
+          <div class="rw-row">
+            <span class="rw-tag rw-tag-next">new *</span>
+            ${nextHex}
+          </div>
+        </div>
+        ${xorStrip}
+        ${sigTable}
       </div>
     </div>
-    ${xorStrip}
-    ${sigTable}
   </div>`;
 }
 
@@ -453,82 +452,6 @@ function formatSigCell(d: DecodedSignal | undefined, units: string): string {
   const u = units ? `<span class="pp-units">${esc(units)}</span>` : "";
   const vd = d.valueDescription ? ` <span class="pp-enum">${esc(d.valueDescription)}</span>` : "";
   return `<span class="rw-raw">${d.raw}</span><span class="rw-phys">${phys}${u}</span>${vd}`;
-}
-
-function renderPayload(
-  mid: number,
-  idx: number,
-  p: DecodedPayload,
-  msgSigs: Signal[],
-): string {
-  const hexRow = prettyHexRow(p.data);
-  const countTag = p.count > 1 ? `<span class="pp-count">×${p.count}</span>` : "";
-
-  if (!msgSigs.length) {
-    return `<div class="paste-payload" data-pidx="${idx}">
-      <div class="pp-head">${hexRow}${countTag}</div>
-      <div class="pp-empty">No definitions for this ID in the loaded database.</div>
-    </div>`;
-  }
-
-  const grid = renderPayloadGrid(msgSigs, p.data, {
-    selectorKey: p.selectorKey,
-    selectorRaw: p.selectorRaw,
-  });
-
-  const selector = p.decoded.find((d) => d.isSelector);
-  const nonMuxed = p.decoded.filter((d) => d.muxId === undefined && !d.isSelector);
-  const muxed = p.decoded.filter((d) => d.muxId !== undefined);
-
-  const rowFor = (d: DecodedSignal, inMuxGroup = false): string => {
-    const physStr = Number.isFinite(d.physical) ? fmt(d.physical) : "—";
-    const vd = d.valueDescription ? ` <span class="pp-enum">${esc(d.valueDescription)}</span>` : "";
-    const units = d.units ? `<span class="pp-units">${esc(d.units)}</span>` : "";
-    const color = signalColor(d.key);
-    const dot = `<span class="pp-dot" style="background:${color}"></span>`;
-    const badge = d.isSelector
-      ? ` <span class="mux-badge">MUX</span>`
-      : inMuxGroup
-        ? ` <span class="mux-badge" title="Only present for this selector value">ID ${d.muxId}</span>`
-        : "";
-    const sig = msgSigs.find((s) => s.key === d.key)?.Signal;
-    const bits = sig && sig.Width
-      ? `<span class="pp-bits">${sig.StartPosition}:${sig.Width}</span>`
-      : "";
-    return `<tr data-sigkey="${esc(d.key)}">
-      <td class="pp-name">${dot}${esc(d.name)}${badge}${bits}</td>
-      <td class="pp-raw">${d.raw}</td>
-      <td class="pp-phys">${physStr}${units}${vd}</td>
-    </tr>`;
-  };
-
-  let rows = "";
-  if (selector) rows += rowFor(selector);
-  for (const d of nonMuxed) rows += rowFor(d);
-  if (muxed.length) {
-    const selName = selector?.name ?? "selector";
-    rows += `<tr><td colspan="3" class="pp-mux-divider">When ${esc(selName)} = ${selector?.raw ?? "?"}</td></tr>`;
-    for (const d of muxed) rows += rowFor(d, true);
-  }
-
-  const selectorChip = selector
-    ? `<span class="pp-selector-chip" title="Mux selector">${esc(selector.name)}=<b>${selector.raw}</b></span>`
-    : "";
-
-  const copyBtn = `<button class="pp-copy" data-mid="${mid}" data-pidx="${idx}" title="Copy this payload" aria-label="Copy payload">
-    ${copyIconSvg()}
-  </button>`;
-
-  return `<div class="paste-payload" data-pidx="${idx}">
-    <div class="pp-head">${hexRow}${countTag}${selectorChip}${copyBtn}</div>
-    <div class="pp-body-row">
-      <div class="pp-grid-wrap">${grid}</div>
-      <table class="pp-table">
-        <thead><tr><th>Signal</th><th style="text-align:right">Raw</th><th style="text-align:right">Value</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  </div>`;
 }
 
 function copyIconSvg(): string {

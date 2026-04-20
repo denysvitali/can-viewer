@@ -1203,6 +1203,28 @@ kbd {
   border-radius: var(--r-1);
   letter-spacing: .05em;
 }
+.pp-tx-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 2px 5px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--r-1);
+  letter-spacing: .05em;
+}
+.pp-rw-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--mux);
+  padding: 2px 5px;
+  background: var(--mux-soft);
+  border: 1px solid rgba(217,141,255,.3);
+  border-radius: var(--r-1);
+  letter-spacing: .05em;
+}
 .pp-selector-chip {
   margin-left: auto;
   font-family: var(--mono);

@@ -98,10 +98,12 @@ function renderDecoded(): void {
 
   // Group by ID, dedup identical payloads (byte-wise). In the same sweep,
   // pair each `*` rewrite frame with the most recent same-ID frame so we can
-  // surface a diff alongside the raw payloads.
+  // surface a diff alongside the raw payloads. Also track original frame
+  // sequence so blocks render in the same order they appeared in the input.
   const byId = new Map<number, { payload: string; data: Uint8Array; count: number; order: number }[]>();
   const rewritesById = new Map<number, Map<string, Omit<RewritePair, "prevDecoded" | "nextDecoded" | "prevSelectorKey" | "prevSelectorRaw" | "nextSelectorKey" | "nextSelectorRaw">>>();
   const lastBytesById = new Map<number, Uint8Array>();
+  const frameOrder: number[] = []; // id-order list, one entry per input frame line
   let order = 0;
   let rwOrder = 0;
   for (const f of frames) {
@@ -109,7 +111,10 @@ function renderDecoded(): void {
     const arr = byId.get(f.id) ?? [];
     const existing = arr.find((x) => x.payload === key);
     if (existing) existing.count++;
-    else arr.push({ payload: key, data: f.data, count: 1, order: order++ });
+    else {
+      arr.push({ payload: key, data: f.data, count: 1, order: order++ });
+      frameOrder.push(f.id);
+    }
     byId.set(f.id, arr);
 
     if (f.rewritten) {
@@ -126,7 +131,8 @@ function renderDecoded(): void {
     lastBytesById.set(f.id, f.data);
   }
 
-  const ids = [...byId.keys()].sort((a, b) => a - b);
+  // Preserve input sequence: deduplicated list of IDs in order of first appearance
+  const ids = frameOrder;
 
   // Build + cache blocks.
   for (const id of ids) {
@@ -515,11 +521,13 @@ function renderPayload(
 
   return `<div class="paste-payload" data-pidx="${idx}">
     <div class="pp-head">${hexRow}${countTag}${selectorChip}${copyBtn}</div>
-    <div class="pp-grid-wrap">${grid}</div>
-    <table class="pp-table">
-      <thead><tr><th>Signal</th><th style="text-align:right">Raw</th><th style="text-align:right">Value</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="pp-body-row">
+      <div class="pp-grid-wrap">${grid}</div>
+      <table class="pp-table">
+        <thead><tr><th>Signal</th><th style="text-align:right">Raw</th><th style="text-align:right">Value</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   </div>`;
 }
 

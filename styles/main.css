@@ -1170,6 +1170,13 @@ kbd {
   align-items: center;
   gap: var(--s-4);
 }
+
+.pp-body-row {
+  display: flex;
+  gap: var(--s-5);
+  align-items: flex-start;
+  overflow: hidden;
+}
 .pp-hex-row {
   display: flex; align-items: center; gap: 3px;
   flex-wrap: wrap;

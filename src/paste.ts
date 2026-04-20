@@ -60,12 +60,15 @@ interface SequentialEntry {
 // Cache decoded output by CAN id so the copy handler can reformat the
 // block without re-parsing the textarea.
 const lastBlocks = new Map<number, DecodedBlock>();
+// Current sequential entries for the copy-all handler
+let entries: SequentialEntry[] = [];
 
 export function initPasteView(): void {
   $pasteDecode.addEventListener("click", renderDecoded);
   $pasteClear.addEventListener("click", () => {
     $pasteInput.value = "";
     lastBlocks.clear();
+    entries = [];
     $pasteOutput.innerHTML = hint();
     updateMeta();
     $pasteInput.focus();
@@ -496,6 +499,70 @@ function formatBlock(block: DecodedBlock): string {
   return out.join("\n");
 }
 
+function formatSequentialEntry(entry: SequentialEntry): string {
+  const { id, data, tx, rewritten, decoded, prevData, prevDecoded } = entry;
+  const msg = state.messages[id];
+  const header = msg
+    ? `${msg.name}\t${formatHexId(id)}\t${msg.bus}\t${msg.cycleTime ? msg.cycleTime + "ms" : ""}`
+    : `(unknown)\t${formatHexId(id)}`;
+  const tags = [tx ? "TX" : "", rewritten ? "RW" : ""].filter(Boolean).join(" ");
+  const out: string[] = [header + (tags ? `\t[${tags}]` : "")];
+  const hex = [...data].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+  out.push(`Data: ${hex}`);
+  if (!decoded.length) {
+    out.push("(no definitions in database)");
+  } else {
+    out.push(["Signal", "Bits", "Raw", "Physical", "Units", "Value"].join("\t"));
+    for (const d of decoded) {
+      const physStr = Number.isFinite(d.physical) ? String(d.physical) : "";
+      const muxTag = d.isSelector ? " [MUX]"
+        : d.muxId !== undefined ? ` [ID=${d.muxId}]`
+        : "";
+      out.push([
+        d.name + muxTag,
+        bitsLabel(d),
+        String(d.raw),
+        physStr,
+        d.units ?? "",
+        d.valueDescription ?? "",
+      ].join("\t"));
+    }
+  }
+  if (rewritten && prevData && prevDecoded) {
+    out.push("");
+    out.push(formatRewriteFromEntry(prevData, data, prevDecoded, decoded));
+  }
+  return out.join("\n");
+}
+
+function formatRewriteFromEntry(
+  prevData: Uint8Array,
+  nextData: Uint8Array,
+  prevDecoded: DecodedSignal[],
+  nextDecoded: DecodedSignal[],
+): string {
+  const prevHex = [...prevData].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+  const nextHex = [...nextData].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+  const lines = [
+    "Rewrite",
+    `  prev:  ${prevHex}`,
+    `  new *: ${nextHex}`,
+  ];
+  const changed = diffSignals(prevDecoded, nextDecoded);
+  if (!changed.length) {
+    lines.push("  (no decoded signal changes)");
+    return lines.join("\n");
+  }
+  lines.push(["Signal", "Before", "After"].join("\t"));
+  for (const c of changed) {
+    const before = c.prev ? `${c.prev.raw}` + (Number.isFinite(c.prev.physical) ? ` (${c.prev.physical}${c.units ? " " + c.units : ""})` : "") : "—";
+    const after = c.next ? `${c.next.raw}` + (Number.isFinite(c.next.physical) ? ` (${c.next.physical}${c.units ? " " + c.units : ""})` : "") : "—";
+    const tag = !c.prev ? " [added]" : !c.next ? " [removed]" : "";
+    lines.push([c.name + tag, before, after].join("\t"));
+  }
+  return lines.join("\n");
+}
+
 function formatRewrite(r: RewritePair, label: number): string {
   const prevHex = [...r.prev].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
   const nextHex = [...r.next].map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
@@ -590,7 +657,7 @@ function onOutputClick(e: MouseEvent): void {
   const copyAll = target.closest<HTMLElement>(".pb-copy-all");
   if (copyAll) {
     e.stopPropagation();
-    const parts = [...lastBlocks.values()].map(formatBlock);
+    const parts = entries.map(formatSequentialEntry);
     copyText(parts.join("\n\n───\n\n"), copyAll);
     return;
   }

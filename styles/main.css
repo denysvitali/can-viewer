@@ -1555,6 +1555,26 @@ kbd {
   box-shadow: 0 0 4px rgba(229,182,90,.55);
 }
 
+.rw-mux-notice {
+  padding: var(--s-2) var(--s-3);
+  margin-bottom: var(--s-2);
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border: 1px solid var(--mux, var(--hair));
+  border-left-width: 3px;
+  border-radius: var(--r-2);
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rw-mux-notice .rw-raw {
+  font-family: var(--mono, monospace);
+  color: var(--text-1);
+}
+.rw-mux-notice .rw-arrow { color: var(--text-3); }
+
 .rw-sig-empty {
   padding: var(--s-4);
   font-size: 11.5px;

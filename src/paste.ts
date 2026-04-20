@@ -320,8 +320,15 @@ function renderRewriteDiff(
 
   const xorStrip = diffBitStrip(bitDiff, len);
 
-  const changed = diffSignals(prevDecoded, nextDecoded);
+  const { changed, muxChanged, prevSelector, nextSelector } = diffSignals(prevDecoded, nextDecoded);
   const sigTable = msgSigs.length ? renderChangedSignalsTable(changed, msgSigs) : "";
+  const muxNotice = muxChanged
+    ? `<div class="rw-mux-notice">Mux selector <b>${esc(nextSelector?.name ?? "")}</b> changed
+        <span class="rw-raw">${prevSelector?.raw}</span>
+        <span class="rw-arrow">→</span>
+        <span class="rw-raw">${nextSelector?.raw}</span>
+        — muxed signals belong to different variants and are not compared.</div>`
+    : "";
 
   return `<div class="pb-rewrites">
     <div class="pb-rewrites-head">
@@ -341,6 +348,7 @@ function renderRewriteDiff(
           </div>
         </div>
         ${xorStrip}
+        ${muxNotice}
         ${sigTable}
       </div>
     </div>
@@ -390,7 +398,19 @@ interface ChangedSignal {
   next?: DecodedSignal;
 }
 
-function diffSignals(prev: DecodedSignal[], next: DecodedSignal[]): ChangedSignal[] {
+interface DiffResult {
+  changed: ChangedSignal[];
+  muxChanged: boolean;
+  prevSelector?: DecodedSignal;
+  nextSelector?: DecodedSignal;
+}
+
+function diffSignals(prev: DecodedSignal[], next: DecodedSignal[]): DiffResult {
+  const prevSelector = prev.find((d) => d.isSelector);
+  const nextSelector = next.find((d) => d.isSelector);
+  const muxChanged =
+    !!prevSelector && !!nextSelector && prevSelector.raw !== nextSelector.raw;
+
   const prevMap = new Map<string, DecodedSignal>();
   const nextMap = new Map<string, DecodedSignal>();
   for (const d of prev) prevMap.set(d.key, d);
@@ -400,6 +420,9 @@ function diffSignals(prev: DecodedSignal[], next: DecodedSignal[]): ChangedSigna
   for (const key of keys) {
     const p = prevMap.get(key);
     const n = nextMap.get(key);
+    // When the mux selector changed, muxed signals in each frame belong to
+    // different variants — don't misreport them as added/removed.
+    if (muxChanged && (p?.muxId !== undefined || n?.muxId !== undefined)) continue;
     const presenceChanged = !p || !n;
     const valueChanged = !!(p && n) && p.raw !== n.raw;
     if (!presenceChanged && !valueChanged) continue;
@@ -411,7 +434,7 @@ function diffSignals(prev: DecodedSignal[], next: DecodedSignal[]): ChangedSigna
       next: n,
     });
   }
-  return out;
+  return { changed: out, muxChanged, prevSelector, nextSelector };
 }
 
 function renderChangedSignalsTable(changed: ChangedSignal[], msgSigs: Signal[]): string {
@@ -548,7 +571,10 @@ function formatRewriteFromEntry(
     `  prev:  ${prevHex}`,
     `  new *: ${nextHex}`,
   ];
-  const changed = diffSignals(prevDecoded, nextDecoded);
+  const { changed, muxChanged, prevSelector, nextSelector } = diffSignals(prevDecoded, nextDecoded);
+  if (muxChanged) {
+    lines.push(`  Mux selector ${nextSelector?.name ?? ""} changed ${prevSelector?.raw} → ${nextSelector?.raw} — muxed signals not compared`);
+  }
   if (!changed.length) {
     lines.push("  (no decoded signal changes)");
     return lines.join("\n");
@@ -572,7 +598,10 @@ function formatRewrite(r: RewritePair, label: number): string {
     `  prev:  ${prevHex}`,
     `  new *: ${nextHex}`,
   ];
-  const changed = diffSignals(r.prevDecoded, r.nextDecoded);
+  const { changed, muxChanged, prevSelector, nextSelector } = diffSignals(r.prevDecoded, r.nextDecoded);
+  if (muxChanged) {
+    lines.push(`  Mux selector ${nextSelector?.name ?? ""} changed ${prevSelector?.raw} → ${nextSelector?.raw} — muxed signals not compared`);
+  }
   if (!changed.length) {
     lines.push("  (no decoded signal changes)");
     return lines.join("\n");

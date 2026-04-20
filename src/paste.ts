@@ -118,7 +118,7 @@ function renderDecoded(): void {
 
   // Build sequential entries: one per unique (id, data) in order of first appearance.
   const seen = new Set<string>();
-  const entries: SequentialEntry[] = [];
+  entries = [];
   const lastDataById = new Map<number, Uint8Array>();
   let seqIdx = 0;
 

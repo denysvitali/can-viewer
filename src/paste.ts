@@ -11,6 +11,7 @@ import { renderPayloadGrid } from "./bits.ts";
 import { openMessage } from "./message.ts";
 import { openSignal } from "./signal.ts";
 import { switchTab } from "./views.ts";
+import { t, fmtPasteMeta, fmtSkipped, fmtAndMore, fmtBitsAcrossBytes, fmtMuxIdBadge } from "./i18n.ts";
 
 interface DecodedPayload {
   data: Uint8Array;
@@ -62,6 +63,9 @@ interface SequentialEntry {
 const lastBlocks = new Map<number, DecodedBlock>();
 // Current sequential entries for the copy-all handler
 let entries: SequentialEntry[] = [];
+// Whether the output pane currently shows a decoded result (vs. the hint) —
+// used to decide what a language switch should re-render.
+let decodedShown = false;
 
 export function initPasteView(): void {
   $pasteDecode.addEventListener("click", renderDecoded);
@@ -69,6 +73,7 @@ export function initPasteView(): void {
     $pasteInput.value = "";
     lastBlocks.clear();
     entries = [];
+    decodedShown = false;
     $pasteOutput.innerHTML = hint();
     updateMeta();
     $pasteInput.focus();
@@ -88,23 +93,24 @@ export function initPasteView(): void {
   updateMeta();
 }
 
+// Re-render the decoder output (if any) — used after a language switch so
+// the paste tab reflects the new language without a reload.
+export function reRenderPaste(): void {
+  if (decodedShown) {
+    renderDecoded();
+  } else {
+    $pasteOutput.innerHTML = hint();
+  }
+  updateMeta();
+}
+
 function hint(): string {
-  return `<div class="paste-hint">
-    Paste frames one per line in the form <code>ID:DATA</code> or <code>IDs:DATA</code>,
-    then hit <strong>Decode</strong>.<br>Bit values are rendered against the loaded
-    database and <strong>muxed signals are gated by the selector</strong> bits you
-    can see painted in the grid.<br>Prefix a line with <code>*</code> (e.g.
-    <code>*7FFs:…</code>) to mark it as a rewritten frame — it will be diffed
-    against the previous same-ID frame.<br>Prefix with <code>></code> (e.g.
-    <code>>*7FFs:…</code>) to mark it as a transmitted (tx) frame.
-  </div>`;
+  return `<div class="paste-hint">${t("paste.hint")}</div>`;
 }
 
 function updateMeta(): void {
   const lines = $pasteInput.value.split(/\r?\n/).filter((l) => l.trim()).length;
-  $pasteMeta.textContent = lines
-    ? `${lines} line${lines === 1 ? "" : "s"}`
-    : "paste frames";
+  $pasteMeta.textContent = fmtPasteMeta(lines);
 }
 
 function renderDecoded(): void {
@@ -112,9 +118,11 @@ function renderDecoded(): void {
   lastBlocks.clear();
 
   if (!frames.length && !errors.length) {
+    decodedShown = false;
     $pasteOutput.innerHTML = hint();
     return;
   }
+  decodedShown = true;
 
   // Build sequential entries: one per unique (id, data) in order of first appearance.
   const seen = new Set<string>();
@@ -168,25 +176,25 @@ function renderDecoded(): void {
   const totalRewrites = entries.filter((e) => e.rewritten).length;
   let h = "";
   h += `<div class="paste-summary-bar">
-    <span class="summary-stat"><strong>${frames.length}</strong><span class="stat-label">frames</span></span>
+    <span class="summary-stat"><strong>${frames.length}</strong><span class="stat-label">${t("paste.frames")}</span></span>
     <span class="summary-sep"></span>
-    <span class="summary-stat"><strong>${uniqueIds}</strong><span class="stat-label">IDs</span></span>
+    <span class="summary-stat"><strong>${uniqueIds}</strong><span class="stat-label">${t("paste.ids")}</span></span>
     <span class="summary-sep"></span>
-    <span class="summary-stat"><strong>${entries.length}</strong><span class="stat-label">shown</span></span>
-    ${totalRewrites ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--mux)">${totalRewrites}</strong><span class="stat-label">rewrites</span></span>` : ""}
-    ${errors.length ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--warn)">${errors.length}</strong><span class="stat-label">skipped</span></span>` : ""}
-    <button class="ghost-btn pb-copy-all" title="Copy all decoded blocks">
+    <span class="summary-stat"><strong>${entries.length}</strong><span class="stat-label">${t("paste.shown")}</span></span>
+    ${totalRewrites ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--mux)">${totalRewrites}</strong><span class="stat-label">${t("paste.rewrites")}</span></span>` : ""}
+    ${errors.length ? `<span class="summary-sep"></span><span class="summary-stat"><strong style="color:var(--warn)">${errors.length}</strong><span class="stat-label">${t("paste.skipped")}</span></span>` : ""}
+    <button class="ghost-btn pb-copy-all" title="${t("paste.copyAllTitle")}">
       ${copyIconSvg()}
-      <span>Copy all</span>
+      <span>${t("common.copyAll")}</span>
     </button>
   </div>`;
 
   if (errors.length) {
-    h += `<details class="paste-errors"><summary>Skipped ${errors.length} line${errors.length === 1 ? "" : "s"}</summary><ul>`;
+    h += `<details class="paste-errors"><summary>${fmtSkipped(errors.length)}</summary><ul>`;
     for (const e of errors.slice(0, 50)) {
       h += `<li><span class="err-line">line ${e.line}</span> <code>${esc(e.text)}</code> — ${esc(e.reason)}</li>`;
     }
-    if (errors.length > 50) h += `<li>…and ${errors.length - 50} more</li>`;
+    if (errors.length > 50) h += `<li>${fmtAndMore(errors.length - 50)}</li>`;
     h += `</ul></details>`;
   }
 
@@ -204,8 +212,8 @@ function renderSequentialEntry(entry: SequentialEntry): string {
   const known = !!msg;
 
   const hexRow = prettyHexRow(data);
-  const txTag = tx ? `<span class="pp-tx-tag">TX</span>` : "";
-  const rwTag = rewritten ? `<span class="pp-rw-tag">RW</span>` : "";
+  const txTag = tx ? `<span class="pp-tx-tag" title="${t("paste.txTitle")}">${t("paste.txTag")}</span>` : "";
+  const rwTag = rewritten ? `<span class="pp-rw-tag" title="${t("paste.rwTitle")}">${t("paste.rwTag")}</span>` : "";
 
   const grid = renderPayloadGrid(msgSigs, data, { selectorKey, selectorRaw });
 
@@ -216,9 +224,9 @@ function renderSequentialEntry(entry: SequentialEntry): string {
     const color = signalColor(d.key);
     const dot = `<span class="pp-dot" style="background:${color}"></span>`;
     const badge = d.isSelector
-      ? ` <span class="mux-badge">MUX</span>`
+      ? ` <span class="mux-badge">${t("paste.muxBadge")}</span>`
       : inMuxGroup
-        ? ` <span class="mux-badge" title="Only present for this selector value">ID ${d.muxId}</span>`
+        ? ` <span class="mux-badge" title="${t("paste.onlyForSelectorTitle")}">${fmtMuxIdBadge(d.muxId!)}</span>`
         : "";
     const sig = msgSigs.find((s) => s.key === d.key)?.Signal;
     const bits = sig && sig.Width
@@ -239,13 +247,17 @@ function renderSequentialEntry(entry: SequentialEntry): string {
   if (selector) rows += rowFor(selector);
   for (const d of nonMuxed) rows += rowFor(d);
   if (muxed.length) {
-    const selName = selector?.name ?? "selector";
-    rows += `<tr><td colspan="3" class="pp-mux-divider">When ${esc(selName)} = ${selector?.raw ?? "?"}</td></tr>`;
+    const selName = selector?.name ?? t("paste.selectorFallback");
+    const muxDividerLabel = t("message.muxGroupWhen", {
+      muxer: esc(selName),
+      id: String(selector?.raw ?? "?"),
+    });
+    rows += `<tr><td colspan="3" class="pp-mux-divider">${muxDividerLabel}</td></tr>`;
     for (const d of muxed) rows += rowFor(d, true);
   }
 
   const selectorChip = selector
-    ? `<span class="pp-selector-chip" title="Mux selector">${esc(selector.name)}=<b>${selector.raw}</b></span>`
+    ? `<span class="pp-selector-chip" title="${t("signal.muxSelectorRole")}">${esc(selector.name)}=<b>${selector.raw}</b></span>`
     : "";
 
   const header = known
@@ -255,22 +267,22 @@ function renderSequentialEntry(entry: SequentialEntry): string {
         ${txTag}${rwTag}
       </div>
       <div class="pb-meta">
-        <span><b>${msgSigs.length}</b> signals</span>
-        ${msg!.cycleTime ? `<span>cycle <b>${msg!.cycleTime}ms</b></span>` : ""}
-        ${msg!.bus ? `<span>bus <b>${esc(msg!.bus)}</b></span>` : ""}
+        <span><b>${msgSigs.length}</b> ${t("paste.signalsSuffix")}</span>
+        ${msg!.cycleTime ? `<span>${t("paste.cyclePrefix")} <b>${msg!.cycleTime}ms</b></span>` : ""}
+        ${msg!.bus ? `<span>${t("common.bus")} <b>${esc(msg!.bus)}</b></span>` : ""}
       </div>`
     : `<div class="pb-title-row">
-        <span class="pb-name unknown">Unknown message</span>
+        <span class="pb-name unknown">${t("paste.unknownMessage")}</span>
         <span class="pb-id">${formatHexId(id)}</span>
         ${txTag}${rwTag}
       </div>
       <div class="pb-meta">
-        <span>not in loaded database</span>
+        <span>${t("paste.notInDatabase")}</span>
       </div>`;
 
   const headerActions = `<div class="pb-actions">
-    ${known ? `<button class="pb-open" data-mid="${id}" title="Open message detail">
-      Open
+    ${known ? `<button class="pb-open" data-mid="${id}" title="${t("paste.openMessageTitle")}">
+      ${t("common.open")}
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 2 6 5 3 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
     </button>` : ""}
   </div>`;
@@ -279,7 +291,7 @@ function renderSequentialEntry(entry: SequentialEntry): string {
     <div class="pp-body-row">
       <div class="pp-grid-wrap">${grid}</div>
       <table class="pp-table">
-        <thead><tr><th>Signal</th><th style="text-align:right">Raw</th><th style="text-align:right">Value</th></tr></thead>
+        <thead><tr><th>${t("paste.colSignal")}</th><th style="text-align:right">${t("paste.colRaw")}</th><th style="text-align:right">${t("paste.colValue")}</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -323,27 +335,28 @@ function renderRewriteDiff(
   const { changed, muxChanged, prevSelector, nextSelector } = diffSignals(prevDecoded, nextDecoded);
   const sigTable = msgSigs.length ? renderChangedSignalsTable(changed, msgSigs) : "";
   const muxNotice = muxChanged
-    ? `<div class="rw-mux-notice">Mux selector <b>${esc(nextSelector?.name ?? "")}</b> changed
-        <span class="rw-raw">${prevSelector?.raw}</span>
-        <span class="rw-arrow">→</span>
-        <span class="rw-raw">${nextSelector?.raw}</span>
-        — muxed signals belong to different variants and are not compared.</div>`
+    ? `<div class="rw-mux-notice">${t("paste.muxChangedNotice", {
+        name: `<b>${esc(nextSelector?.name ?? "")}</b>`,
+        prev: `<span class="rw-raw">${prevSelector?.raw}</span>`,
+        arrow: `<span class="rw-arrow">→</span>`,
+        next: `<span class="rw-raw">${nextSelector?.raw}</span>`,
+      })}</div>`
     : "";
 
   return `<div class="pb-rewrites">
     <div class="pb-rewrites-head">
-      <span class="rw-title">Rewrite diff</span>
+      <span class="rw-title">${t("paste.rewriteDiff")}</span>
       <span class="rw-meta">${changedSummary(byteChanged, bitDiff)}</span>
     </div>
     <div class="pb-rewrites-body">
       <div class="paste-rewrite">
         <div class="rw-rows">
           <div class="rw-row">
-            <span class="rw-tag rw-tag-prev">prev</span>
+            <span class="rw-tag rw-tag-prev">${t("paste.prev")}</span>
             ${prevHex}
           </div>
           <div class="rw-row">
-            <span class="rw-tag rw-tag-next">new *</span>
+            <span class="rw-tag rw-tag-next">${t("paste.new")}</span>
             ${nextHex}
           </div>
         </div>
@@ -368,8 +381,8 @@ function diffHexRow(data: Uint8Array, changed: boolean[], len: number): string {
 
 function diffBitStrip(bitDiff: boolean[], len: number): string {
   if (!bitDiff.some(Boolean)) return "";
-  let h = '<div class="rw-bitstrip" aria-label="Changed bits (XOR)">';
-  h += '<span class="rw-bitstrip-label">Δ bits</span>';
+  let h = `<div class="rw-bitstrip" aria-label="${t("paste.changedBitsAria")}">`;
+  h += `<span class="rw-bitstrip-label">${t("paste.deltaBits")}</span>`;
   h += '<div class="rw-bitstrip-grid">';
   for (let i = 0; i < len; i++) {
     h += `<div class="rw-byte">`;
@@ -386,8 +399,8 @@ function diffBitStrip(bitDiff: boolean[], len: number): string {
 function changedSummary(byteChanged: boolean[], bitDiff: boolean[]): string {
   const bytes = byteChanged.filter(Boolean).length;
   const bits = bitDiff.filter(Boolean).length;
-  if (bits === 0) return "identical";
-  return `${bits} bit${bits === 1 ? "" : "s"} across ${bytes} byte${bytes === 1 ? "" : "s"}`;
+  if (bits === 0) return t("common.identical");
+  return fmtBitsAcrossBytes(bits, bytes);
 }
 
 interface ChangedSignal {
@@ -439,7 +452,7 @@ function diffSignals(prev: DecodedSignal[], next: DecodedSignal[]): DiffResult {
 
 function renderChangedSignalsTable(changed: ChangedSignal[], msgSigs: Signal[]): string {
   if (!changed.length) {
-    return `<div class="rw-sig-empty">No decoded signal values changed.</div>`;
+    return `<div class="rw-sig-empty">${t("paste.noSignalChanges")}</div>`;
   }
   let rows = "";
   for (const c of changed) {
@@ -450,9 +463,9 @@ function renderChangedSignalsTable(changed: ChangedSignal[], msgSigs: Signal[]):
     const color = signalColor(c.key);
     const dot = `<span class="pp-dot" style="background:${color}"></span>`;
     const tag = !c.prev
-      ? `<span class="rw-pill rw-added">added</span>`
+      ? `<span class="rw-pill rw-added">${t("common.added")}</span>`
       : !c.next
-        ? `<span class="rw-pill rw-removed">removed</span>`
+        ? `<span class="rw-pill rw-removed">${t("common.removed")}</span>`
         : "";
     rows += `<tr data-sigkey="${esc(c.key)}">
       <td class="pp-name">${dot}${esc(c.name)}${bits}${tag}</td>
@@ -463,10 +476,10 @@ function renderChangedSignalsTable(changed: ChangedSignal[], msgSigs: Signal[]):
   }
   return `<table class="pp-table rw-sig-table">
     <thead><tr>
-      <th>Signal</th>
-      <th style="text-align:right">Before</th>
+      <th>${t("paste.colSignal")}</th>
+      <th style="text-align:right">${t("paste.colBefore")}</th>
       <th></th>
-      <th style="text-align:right">After</th>
+      <th style="text-align:right">${t("paste.colAfter")}</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -670,7 +683,7 @@ function flashCopied(el: HTMLElement): void {
   el.classList.add("copied");
   const label = el.querySelector("span");
   const prev = label?.textContent ?? null;
-  if (label) label.textContent = "Copied";
+  if (label) label.textContent = t("common.copied");
   setTimeout(() => {
     el.classList.remove("copied");
     if (label && prev !== null) label.textContent = prev;

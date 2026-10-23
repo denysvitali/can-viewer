@@ -1,4 +1,5 @@
 import type { Signal, SignalDefinition } from "./types.ts";
+import { t } from "./i18n.ts";
 
 export interface ParsedFrame {
   id: number;
@@ -29,7 +30,7 @@ export function parseFrames(input: string): ParseResult {
     if (!text.trim()) continue;
     const m = LINE_RE.exec(text);
     if (!m) {
-      errors.push({ line: i + 1, text, reason: "unrecognised format" });
+      errors.push({ line: i + 1, text, reason: t("decode.reasonUnrecognisedFormat") });
       continue;
     }
     const tx = !!m[1];
@@ -37,7 +38,7 @@ export function parseFrames(input: string): ParseResult {
     const id = parseInt(m[3]!, 16);
     const hex = m[4]!;
     if (hex.length % 2 !== 0) {
-      errors.push({ line: i + 1, text, reason: "data has odd hex length" });
+      errors.push({ line: i + 1, text, reason: t("decode.reasonOddHexLength") });
       continue;
     }
     const data = new Uint8Array(hex.length / 2);

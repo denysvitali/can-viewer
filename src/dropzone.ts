@@ -5,6 +5,7 @@ import {
 } from "./dom.ts";
 import { revealSignalsPane, showPane, switchTab } from "./views.ts";
 import { applyFilter } from "./list.ts";
+import { t } from "./i18n.ts";
 
 export function initDropzone(): void {
   $dropBox.addEventListener("click", () => $fileInput.click());
@@ -42,7 +43,7 @@ function loadFile(file: File): void {
       const json = JSON.parse(e.target!.result as string) as SignalDatabase;
       ingest(json);
     } catch (err) {
-      alert("Failed to parse JSON: " + (err as Error).message);
+      alert(t("error.jsonParsePrefix") + (err as Error).message);
     }
   };
   reader.readAsText(file);
@@ -90,7 +91,9 @@ function ingest(data: SignalDatabase): void {
   rebuildBusFilters();
   applyFilter();
 
-  // Header status pill.
+  // Header status pill. The label now shows the loaded filename rather than
+  // the static "no database" copy, so it stops tracking the i18n dictionary.
+  $fileLabel.removeAttribute("data-i18n");
   $fileLabel.textContent = state.fileName;
   $fileDot.classList.add("loaded");
 
@@ -107,7 +110,7 @@ function rebuildBusFilters(): void {
     if (s.BusName) buses.add(s.BusName);
   }
 
-  let html = '<button class="fchip on" data-bus="all">All</button>';
+  let html = `<button class="fchip on" data-bus="all" data-i18n="filter.all">${t("filter.all")}</button>`;
   for (const bus of [...buses].sort()) {
     html += `<button class="fchip" data-bus="${bus}">${bus}</button>`;
   }

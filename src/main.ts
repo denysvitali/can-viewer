@@ -5,7 +5,10 @@ import { initMessageView } from "./message.ts";
 import { initSignalView } from "./signal.ts";
 import { initPasteView } from "./paste.ts";
 import { initViews } from "./views.ts";
+import { initI18n } from "./i18n.ts";
 
+// Must run before any other module renders UI text.
+initI18n();
 initViews();
 initDropzone();
 initList();

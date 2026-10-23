@@ -181,7 +181,7 @@ a { color: var(--accent); text-decoration: none; }
   border: 1px solid var(--hair);
   border-radius: var(--r-3);
   background: var(--surface-1);
-  max-width: 320px;
+  max-width: 360px;
 }
 .file-dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -1650,7 +1650,7 @@ kbd {
   .brand-name { display: none; }
   .tabs { padding: 2px; }
   .tab-btn { padding: 4px 10px; font-size: 12px; }
-  .file-box { padding: 3px var(--s-3); max-width: 160px; }
+  .file-box { padding: 3px var(--s-3); max-width: 190px; }
   .file-label { font-size: 11px; }
   .file-box .ghost-btn span { display: none; }
 

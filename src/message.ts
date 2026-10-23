@@ -7,6 +7,7 @@ import { esc, formatHexId, prop, signalColor } from "./helpers.ts";
 import { renderFrameOverview } from "./bits.ts";
 import { showPane } from "./views.ts";
 import { openSignal } from "./signal.ts";
+import { t } from "./i18n.ts";
 
 let currentMid: number | null = null;
 
@@ -16,6 +17,12 @@ export function initMessageView(): void {
     showPane("empty");
   });
   $msgCopy.addEventListener("click", onCopy);
+}
+
+// Re-render the currently-open message (if any) — used after a language
+// switch so the detail pane reflects the new language without a reload.
+export function reRenderMessage(): void {
+  if (currentMid !== null) openMessage(currentMid);
 }
 
 export function openMessage(mid: number): void {
@@ -31,14 +38,14 @@ export function openMessage(mid: number): void {
   let h = "";
 
   h += `<div class="section"><div class="props">`;
-  h += prop("CAN ID", `${formatHexId(msg.id)} (${msg.id})`);
-  h += prop("Bus", `${msg.bus} · ${msg.busNum ?? "?"}`);
-  h += prop("Signals", msgSigs.length);
-  h += prop("Cycle Time", msg.cycleTime ? msg.cycleTime + " ms" : "—");
+  h += prop(t("message.canId"), `${formatHexId(msg.id)} (${msg.id})`);
+  h += prop(t("message.bus"), `${msg.bus} · ${msg.busNum ?? "?"}`);
+  h += prop(t("message.signals"), msgSigs.length);
+  h += prop(t("message.cycleTime"), msg.cycleTime ? msg.cycleTime + " ms" : "—");
   h += `</div></div>`;
 
   if (msgSigs.some((s) => s.Signal?.Width)) {
-    h += `<div class="section"><div class="section-label">Frame Layout</div>
+    h += `<div class="section"><div class="section-label">${t("message.frameLayout")}</div>
       <div class="frame-overview"><div class="frame-canvas">${renderFrameOverview(msgSigs)}</div></div>
     </div>`;
   }
@@ -65,7 +72,7 @@ export function openMessage(mid: number): void {
     const color = signalColor(s.key);
     const scaleStr = sig.Scale && sig.Scale !== 1 ? ` · ×${sig.Scale}` : "";
     const offsetStr = sig.Offset ? ` · ${sig.Offset > 0 ? "+" : ""}${sig.Offset}` : "";
-    const signedStr = sig.Signedness === "SIGNED" ? " · signed" : "";
+    const signedStr = sig.Signedness === "SIGNED" ? ` · ${t("common.signed")}` : "";
     const unitsStr = s.Units ? ` · ${esc(s.Units)}` : "";
     const bitStr = sig.StartPosition !== undefined
       ? `bit ${sig.StartPosition}:${sig.Width ?? "?"}`
@@ -81,7 +88,7 @@ export function openMessage(mid: number): void {
     </div>`;
   };
 
-  h += `<div class="msg-signals-heading">Signals</div>`;
+  h += `<div class="msg-signals-heading">${t("message.signals")}</div>`;
   for (const s of plain) h += renderSig(s);
 
   const sortedMuxKeys = [...muxGroups.keys()].sort((a, b) => {
@@ -90,7 +97,11 @@ export function openMessage(mid: number): void {
   });
   for (const mk of sortedMuxKeys) {
     const [muxer, mid2] = mk.split("=");
-    h += `<div class="mux-group-label">When <code>${esc(muxer!)}</code> = ${esc(mid2!)}</div>`;
+    const muxGroupLabel = t("message.muxGroupWhen", {
+      muxer: `<code>${esc(muxer!)}</code>`,
+      id: esc(mid2!),
+    });
+    h += `<div class="mux-group-label">${muxGroupLabel}</div>`;
     for (const s of muxGroups.get(mk)!) h += renderSig(s);
   }
 
@@ -147,11 +158,10 @@ function onCopy(): void {
   const markCopied = () => {
     $msgCopy.classList.add("copied");
     const span = $msgCopy.querySelector("span");
-    const prev = span?.textContent ?? "Copy";
-    if (span) span.textContent = "Copied";
+    if (span) span.textContent = t("common.copied");
     setTimeout(() => {
       $msgCopy.classList.remove("copied");
-      if (span) span.textContent = prev;
+      if (span) span.textContent = t("common.copy");
     }, 1500);
   };
 

@@ -12,6 +12,7 @@ export const $tabs = byId<HTMLElement>("tabs");
 export const $fileLabel = byId<HTMLSpanElement>("fileLabel");
 export const $fileDot = byId<HTMLSpanElement>("fileDot");
 export const $loadFileBtn = byId<HTMLButtonElement>("loadFileBtn");
+export const $langToggle = byId<HTMLButtonElement>("langToggle");
 
 // Tab panels
 export const $signalsTab = byId<HTMLElement>("signalsTab");

@@ -6,6 +6,7 @@ import {
 import { esc, formatHexId } from "./helpers.ts";
 import { openSignal } from "./signal.ts";
 import { openMessage } from "./message.ts";
+import { t, fmtStats } from "./i18n.ts";
 
 let activeKey: string | null = null;
 
@@ -60,8 +61,7 @@ function updateStats(): void {
   const msgCount = Object.values(state.messages)
     .filter((m) => state.currentBus === "all" || m.bus === state.currentBus)
     .length;
-  const sigN = state.filtered.length.toLocaleString();
-  $stats.textContent = `${sigN} signals · ${msgCount} messages`;
+  $stats.textContent = fmtStats(state.filtered.length, msgCount);
 }
 
 function renderBatch(): void {
@@ -73,7 +73,7 @@ function renderBatch(): void {
   }
   $sigList.appendChild(frag);
   state.rendered = end;
-  $loadMore.textContent = state.rendered >= state.filtered.length ? "" : "scroll for more";
+  $loadMore.textContent = state.rendered >= state.filtered.length ? "" : t("list.scrollForMore");
 }
 
 function onScroll(): void {
@@ -108,7 +108,7 @@ function makeCard(s: Signal, idx: number): HTMLElement {
       <span class="sig-tag msg-link" data-mid="${s.ID}">${esc(s.MessageName ?? "")}</span>
       <span class="sig-tag bus">${esc(s.BusName ?? "")}</span>
       ${sig.Width ? `<span class="sig-tag bits">${sig.StartPosition}:${sig.Width}</span>` : ""}
-      ${sig.Signedness === "SIGNED" ? `<span class="sig-tag signed">signed</span>` : ""}
+      ${sig.Signedness === "SIGNED" ? `<span class="sig-tag signed">${t("common.signed")}</span>` : ""}
     </div>`;
   return d;
 }
